@@ -1,0 +1,20 @@
+<NODES>
+R
+F
+N1
+N2
+N3
+B
+
+<EDGES>
+R -> F
+R <-> B
+F -> N1
+F -> N2
+F -> N3
+N1 <-> N2
+N1 <-> N3
+N2 <-> N3
+N1 -> B
+N2 -> B
+N3 -> B
