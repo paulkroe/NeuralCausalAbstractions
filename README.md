@@ -56,6 +56,6 @@ python -m src.main <NAME> sampling mnist gan --h-layers 3 --h-size 2 --scale-h-s
 To compile the visualization of the results, name the folders of the results `naive`, `noncausal`, and `representational` for each setting respectively, and place all three folders into a single folder.
 Then run the command
 ```
-python -m src.experiment.experiment1_id_results <DIR>
+python -m src.experiment.experiment2_results <DIR>
 ```
 where `<DIR>` refers to the outer folder with all three results.
