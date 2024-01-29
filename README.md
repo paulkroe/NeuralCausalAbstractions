@@ -1,4 +1,4 @@
-# Neural Causal Models for Counterfactuals
+# Neural Causal Abstractions 
 This repository contains the code for the paper ["Neural Causal Abstractions"](https://arxiv.org/abs/2401.02602) by Kevin Xia and Elias Bareinboim.
 
 Please cite our work if you found this code useful.
