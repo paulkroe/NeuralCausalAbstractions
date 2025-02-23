@@ -37,6 +37,12 @@ class MinMaxNCMRunner(BaseRunner):
                                                   monitor="train_loss",
                                                   save_on_train_epoch_end=True)
 
+        accelerator = "cpu"
+        devices = "auto"
+        if gpu is not None:
+            accelerator = "gpu"
+            devices = gpu
+
         return pl.Trainer(
             callbacks=[
                 checkpoint,
@@ -49,7 +55,8 @@ class MinMaxNCMRunner(BaseRunner):
             accumulate_grad_batches=1,
             logger=pl.loggers.TensorBoardLogger(f'{directory}/logs/{model_name}/'),
             log_every_n_steps=1,
-            gpus=gpu
+            devices=devices,  
+            accelerator=accelerator,
         ), checkpoint
 
     def run(self, exp_name, n, trial_index, hyperparams=None, gpu=None,
