@@ -39,7 +39,7 @@ class MinMaxNCMRunner(BaseRunner):
 
         accelerator = "cpu"
         devices = "auto"
-        if gpu is not None:
+        if gpu is not None and T.cuda.is_available():
             accelerator = "gpu"
             devices = gpu
 

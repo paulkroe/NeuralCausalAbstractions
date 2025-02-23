@@ -40,10 +40,10 @@ class NCMRunner(BaseRunner):
 
         accelerator = "cpu"
         devices = "auto"
-        if gpu is not None:
+        if gpu is not None and T.cuda.is_available():
             accelerator = "gpu"
             devices = gpu
-
+        
         return pl.Trainer(
             callbacks=[
                 checkpoint,
@@ -111,9 +111,6 @@ class NCMRunner(BaseRunner):
                 if hyperparams["verbose"]:
                     print('Key:', key)
                     print('Seed:', seed)
-
-                if gpu is None:
-                    gpu = int(T.cuda.is_available())
 
                 # Create data-generating model and generate data
                 normalize = hyperparams["normalize"]
