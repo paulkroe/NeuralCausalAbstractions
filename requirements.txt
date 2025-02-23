@@ -1,0 +1,10 @@
+numpy
+torch
+torchvision
+pandas
+matplotlib
+argparse
+pytorch_lightning
+python-mnist
+tensorboard
+tensorboardX
