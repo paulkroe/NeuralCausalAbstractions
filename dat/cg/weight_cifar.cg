@@ -1,0 +1,9 @@
+<NODES>
+animal
+age
+old
+
+<EDGES>
+animal <-> age
+animal -> old
+age -> old
