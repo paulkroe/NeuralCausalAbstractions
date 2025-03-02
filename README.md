@@ -4,11 +4,31 @@ This repository contains the code for the paper ["Neural Causal Abstractions"](h
 Please cite our work if you found this code useful.
 
 ## Setup
-Run the following code to install python requirements.
+
+### Using Conda
+
+To set up the environment using Conda, run the following commands:
+
+```bash
+conda create --name NeuralCausalAbstractions python=3.10 -y
+conda activate NeuralCausalAbstractions
+pip install -r requirements.txt
 ```
-python -m pip install -r requirements.txt
+
+### Using venv
+To set up the environment using Python's `venv`, follow these steps:
+
+```bash
+python -m venv NeuralCausalAbstractions
+source NeuralCausalAbstractions/bin/activate  # On macOS/Linux
+NeuralCausalAbstractions\Scripts\activate     # On Windows (cmd)
+pip install -r requirements.txt
 ```
-To run the ColoredMNIST experiments, place the MNIST data files in `dat/mnist`.
+
+### Downloading MNIST Data
+
+To run the ColoredMNIST experiments, place the MNIST dataset files in the `dat/mnist` directory.  
+You can download them from [this link](https://git-disl.github.io/GTDLBench/datasets/mnist_datasets/).
 
 ## Running the code
 
