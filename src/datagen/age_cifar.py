@@ -17,10 +17,10 @@ def expand_do(val, n):
     return np.ones(n, dtype=int) * val
 
 
-class WeightCifarDataGenerator(SCMDataGenerator):
-    def __init__(self, mode):
+class AgeCifarDataGenerator(SCMDataGenerator):
+    def __init__(self, image_size, mode, evaluating=False):
         super().__init__(mode)
-        
+        self.evaluating = evaluating # not sure what this does
         # U_{Conf} samples an individual in the population.
         # that is: it samples an animal and then an age for that animal
         # we assume age is distributed uniformly
@@ -39,7 +39,7 @@ class WeightCifarDataGenerator(SCMDataGenerator):
         # Define transformations (convert to tensor and normalize)
         transform = transforms.Compose([
             transforms.ToTensor(),  # Converts to torch.Tensor
-            # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))  # CIFAR-10 mean/std
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))  # CIFAR-10 mean/std
         ])
 
         # Load CIFAR-10 dataset
@@ -80,9 +80,9 @@ class WeightCifarDataGenerator(SCMDataGenerator):
         self.v_type = {
             'age': sdt.REAL,
             'animal': sdt.IMAGE,
-            'old': sdt.BINARY
+            'old': sdt.BINARY_ONES
         }
-        self.cg = "weight_cifar"
+        self.cg = "age_cifar"
 
         # assumed weights in lbs for each animal
         self.average_weights = {
@@ -124,12 +124,11 @@ class WeightCifarDataGenerator(SCMDataGenerator):
             old.append(1 if age[i] > self.life_expectancy[self.indices_animal_classes[animal_idx[i]]] / 2 else 0)       
  
         data = {
-            'animal_idx': T.Tensor(animal_idx).float(),
-            'animal': animal,
-            'age': T.Tensor(age).float(),
-            'old': T.Tensor(old).float()
+            'animal': T.stack(animal, dim=0),
+            'age': T.Tensor(age).float().unsqueeze(1),
+            'old': T.Tensor(old).float().unsqueeze(1)
         }
-        
+
         if return_U:
             new_U = {
                 "u_conf": u_conf,
@@ -174,27 +173,30 @@ class WeightCifarDataGenerator(SCMDataGenerator):
         raise NotImplementedError("Not implemented yet")
 
 if __name__ == "__main__":
-    mdg = WeightCifarDataGenerator("sampling")
+    mdg = AgeCifarDataGenerator(None, "sampling")
 
-    # data = mdg.generate_samples(10)
+    n_samples = 4
+    # data = mdg.generate_samples(n_samples)
     
-    # for i in range(10):
+    # for i in range(n_samples):
     #    label = f"{mdg.indices_animal_classes[(int)(data['animal_idx'][i].item())]} {data['age'][i]} {data['old'][i]}"
     #    mdg.show_image(data['animal'][i], label)
     
 
-    data, sampled_u = mdg.generate_samples(10, do={"animal": [mdg.animal_class_indices["horse"] for _ in range(10)]}, return_U=True)
+    data, sampled_u = mdg.generate_samples(n_samples, do={"animal": [mdg.animal_class_indices["horse"] for _ in range(n_samples)]}, return_U=True)
+    animal_idx = [sampled_u["u_conf"][i][0] for i in range(n_samples)]
     
     # expect many young horses
-    for i in range(10):
-        label = f"intervened animal {mdg.indices_animal_classes[(int)(data['animal_idx'][i].item())]}, old: {data['age'][i]} {data['old'][i]}, true animal: {mdg.indices_animal_classes[(int)(sampled_u['u_conf'][i][0].item())]}"
+    for i in range(n_samples):
+        label = f"intervened animal {mdg.indices_animal_classes[animal_idx[i]]}, old: {data['age'][i]} {data['old'][i]}, true animal: {mdg.indices_animal_classes[animal_idx[i]]}"
         mdg.show_image(data['animal'][i], label)
 
-    data, sampled_u = mdg.generate_samples(10, do={"animal": [mdg.animal_class_indices["frog"] for _ in range(10)]}, return_U=True)
+    data, sampled_u = mdg.generate_samples(n_samples, do={"animal": [mdg.animal_class_indices["frog"] for _ in range(n_samples)]}, return_U=True)
+    animal_idx = [sampled_u["u_conf"][i][0] for i in range(n_samples)]
     
     # expect many old frogs
-    for i in range(10):
-        label = f"intervened animal {mdg.indices_animal_classes[(int)(data['animal_idx'][i].item())]}, old: {data['age'][i]} {data['old'][i]}, true animal: {mdg.indices_animal_classes[(int)(sampled_u['u_conf'][i][0].item())]}"
+    for i in range(n_samples):
+        label = f"intervened animal {mdg.indices_animal_classes[animal_idx[i]]}, old: {data['age'][i]} {data['old'][i]}, true animal: {mdg.indices_animal_classes[animal_idx[i]]}"
         mdg.show_image(data['animal'][i], label)
 
     # test_var = "digit"
