@@ -6,7 +6,7 @@ import numpy as np
 from src.pipeline import GANPipeline, GANReprPipeline
 from src.scm.ncm import GAN_NCM
 from src.run import NCMRunner, MinMaxNCMRunner
-from src.datagen import ColorMNISTDataGenerator, BMIDataGenerator
+from src.datagen import ColorMNISTDataGenerator, BMIDataGenerator, AgeCifarDataGenerator
 from src.datagen.scm_datagen import SCMDataTypes as sdt
 
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
@@ -17,7 +17,8 @@ valid_pipelines = {
 }
 valid_generators = {
     "mnist": ColorMNISTDataGenerator,
-    "bmi": BMIDataGenerator
+    "bmi": BMIDataGenerator,
+    "cifar": AgeCifarDataGenerator
 }
 architectures = {
     "gan": GAN_NCM,
@@ -80,6 +81,9 @@ parser.add_argument('--rep-class-lambda', type=float, default=0.1,
                     help="weight for classification loss in conditional encoder")
 parser.add_argument('--rep-temperature', type=float, default=1.0, help="temperature for contrastive loss")
 parser.add_argument('--rep-contrast-lambda', type=float, default=0.1, help="weight for contrastive loss in encoder")
+parser.add_argument('--rep-no-decoder', action="store_true", help="do not train decoder")
+parser.add_argument('--rep-max-epochs', type=int, default=None, help="maximum number of training epochs for representation")
+parser.add_argument('--rep-patience', type=int, default=None, help="patience for early stopping in representation")
 
 # Hyper-parameters for GAN-NCM
 parser.add_argument('--gan-mode', default="vanilla", help="GAN loss function (default: vanilla)")
@@ -194,6 +198,9 @@ hyperparams = {
     'rep-class-lambda': args.rep_class_lambda,
     'rep-temperature': args.rep_temperature,
     'rep-contrast-lambda': args.rep_contrast_lambda,
+    'rep-no-decoder': args.rep_no_decoder,
+    'rep-max-epochs': args.rep_max_epochs if args.rep_max_epochs is not None else args.max_epochs,
+    'rep-patience': args.rep_patience if args.rep_patience is not None and args.rep_patience > 0 else args.rep_max_epochs,
     'identify': args.mode == "identify",
     'normalize': not args.no_normalize,
     'id-reruns': args.n_reruns,

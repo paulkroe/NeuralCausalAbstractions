@@ -190,13 +190,16 @@ class NCMRunner(BaseRunner):
                                                         dir=f'{d}/before_train_repr_{img_var}.png')
 
                         # Train representational model
-                        rep_trainer, rep_checkpoint = self.create_trainer(d, "rep_model", hyperparams['max-epochs'],
-                                                                          hyperparams['patience'], gpu)
-                        rep_trainer.fit(rep_m)
-                        ckpt = T.load(rep_checkpoint.best_model_path)  # Find best model
-                        rep_m.load_state_dict(ckpt['state_dict'])
-                        T.save(rep_m.state_dict(), f'{d}/best_rep.th')  # Save best model
-
+                        rep_trainer, rep_checkpoint = self.create_trainer(d, "rep_model", hyperparams['rep-max-epochs'],
+                                                                          hyperparams['rep-patience'], gpu)
+                        # in this case we are not training the representation model
+                        print("Training representation model...")
+                        if not ((hyperparams['repr'] == "auto_enc_notrain") and hyperparams['rep-no-decoder']):
+                            rep_trainer.fit(rep_m)
+                            ckpt = T.load(rep_checkpoint.best_model_path)  # Find best model
+                            rep_m.load_state_dict(ckpt['state_dict'])
+                            T.save(rep_m.state_dict(), f'{d}/best_rep.th')  # Save best model
+                        print("Done training representation model!")
                         # Final rep visualization
                         if img_query:
                             img_sample = dat_set.get_image_batch(64)

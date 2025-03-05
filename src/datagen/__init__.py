@@ -3,6 +3,7 @@ from src.datagen.img_transforms import get_transform
 from src.datagen.mnist_bd import MNISTDataGenerator
 from src.datagen.color_mnist import ColorMNISTDataGenerator
 from src.datagen.bmi import BMIDataGenerator
+from src.datagen.age_cifar import AgeCifarDataGenerator
 
 __all__ = [
     'SCMDataset',
@@ -11,5 +12,6 @@ __all__ = [
     'MNISTDataGenerator',
     'ColorMNISTDataGenerator',
     'BMIDataGenerator',
+    'AgeCifarDataGenerator',
     'get_transform'
 ]
