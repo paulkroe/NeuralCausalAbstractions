@@ -8,6 +8,7 @@ from src.scm.ncm import GAN_NCM
 from src.datagen.scm_datagen import SCMDataTypes as sdt
 
 from .base_pipeline import BasePipeline
+import warnings
 
 
 def log(x):
@@ -36,6 +37,7 @@ class RepresentationalPipeline(BasePipeline):
         self.grad_acc = hyperparams["rep-grad-acc"]
         self.lr = hyperparams["rep-lr"]
         self.train_encoder = (hyperparams['repr'] != "auto_enc_notrain")
+        self.train_decoder = not hyperparams['rep-no-decoder']
         self.classify = (hyperparams['repr'] == "auto_enc_conditional")
         self.classify_lambda = hyperparams['rep-class-lambda']
         self.sup_contrastive = (hyperparams['repr'] == "auto_enc_sup_contrastive")
@@ -68,6 +70,13 @@ class RepresentationalPipeline(BasePipeline):
         return total
 
     def training_step(self, batch, batch_idx):
+
+        if not (self.train_encoder or self.train_decoder or self.classify):
+            warnings.warn("No component is training", UserWarning)
+
+        if not (self.train_encoder or self.train_decoder or self.classify):
+            return
+
         if self.classify:
             opt_enc, opt_dec, opt_head = self.optimizers()
         else:
@@ -132,7 +141,8 @@ class RepresentationalPipeline(BasePipeline):
                 opt_enc.step()
             if self.classify:
                 opt_head.step()
-            opt_dec.step()
+            if self.train_decoder:
+                opt_dec.step()
 
         # logging
         self.log('train_loss', loss.item(), prog_bar=True)

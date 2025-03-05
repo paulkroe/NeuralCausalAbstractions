@@ -25,6 +25,7 @@ class GANReprPipeline(GANPipeline):
 
         self.rep_lr = hyperparams["rep-lr"]
         self.train_encoder = (hyperparams['repr'] != "auto_enc_notrain")
+        self.train_decoder = not hyperparams['rep-no-decoder']
         self.classify = (hyperparams['repr'] == "auto_enc_conditional")
         self.classify_lambda = hyperparams['rep-class-lambda']
 
@@ -170,7 +171,8 @@ class GANReprPipeline(GANPipeline):
         if ((batch_idx + 1) % self.grad_acc) == 0:
             G_opt.step()
             PU_opt.step()
-            dec_opt.step()
+            if self.train_decoder:
+                dec_opt.step()
             if self.train_encoder:
                 enc_opt.step()
             if self.classify:
