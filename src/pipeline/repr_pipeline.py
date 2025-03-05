@@ -9,11 +9,77 @@ from src.datagen.scm_datagen import SCMDataTypes as sdt
 
 from .base_pipeline import BasePipeline
 import warnings
+import torchvision.transforms as transforms
 
 
 def log(x):
     return T.log(x + 1e-8)
 
+def nt_xent_loss(batch, model, temperature=0.5):
+    """
+    Computes the NT-Xent loss for a batch of images.
+    
+    Args:
+        batch (torch.Tensor): Input images of shape [batch_size, 3, 32, 32].
+        model (torch.nn.Module): Encoder model that maps images to representations.
+        temperature (float): Temperature parameter for scaling.
+        
+    Returns:
+        torch.Tensor: Computed NT-Xent loss.
+    """
+
+    loss = 0
+
+    # Define SimCLR augmentations
+    augmentation = transforms.Compose([
+        transforms.RandomResizedCrop(size=32, scale=(0.2, 1.0)),  # Random crop
+        transforms.ColorJitter(0.8, 0.8, 0.8, 0.2),  # Color distortion
+    ])
+    batch_aug1 = {key: [] for key in batch.keys()}
+    batch_aug2 = {key: [] for key in batch.keys()}
+
+    for key in batch.keys():
+        for idx in range(batch[key].shape[0]):
+            if model.v_type[key] == sdt.IMAGE:
+                img = batch[key][idx]  # Shape: [3, 32, 32]
+                # Apply augmentations to get two views of each image
+                batch_aug1[key].append(augmentation(img))
+                batch_aug2[key].append(augmentation(img))
+            else:
+                batch_aug1[key].append(batch[key][idx])
+                batch_aug2[key].append(batch[key][idx])
+
+    for key in batch.keys():
+        batch_aug1[key] = T.stack(batch_aug1[key], dim=0)
+        batch_aug2[key] = T.stack(batch_aug2[key], dim=0)
+
+    # Concatenate both views along batch dimension
+    batch_aug = {key: T.cat([batch_aug1[key], batch_aug2[key]], dim=0) for key in batch.keys()}
+
+    # Forward pass through encoder
+    z = model.encode(batch_aug)
+
+    # TODO: this might be bad if we have multiple images of different importance
+    for key in z:
+        if model.v_type[key] == sdt.IMAGE:
+            z[key] = T.nn.functional.normalize(z[key], dim=1) # Normalize embeddings
+
+            # Compute similarity matrix
+            sim_matrix = T.matmul(z[key], z[key].T)  # Shape: [2*batch_size, 2*batch_size]
+    
+            # Scale by temperature
+            sim_matrix /= temperature
+
+
+            batch_size = z[key].shape[0] // 2
+            # Construct labels: each image should be most similar to its augmented pair
+            labels = T.cat([T.arange(batch_size) for _ in range(2)]).to(batch[key].device)
+            labels = labels + (labels >= batch_size).long() * batch_size  # Ensure correct alignment
+
+            # Compute cross-entropy loss
+            loss += T.nn.functional.cross_entropy(sim_matrix, labels)
+
+    return loss
 
 class RepresentationalPipeline(BasePipeline):
     def __init__(self, datagen, cg, v_size, v_type, hyperparams=None, repr_model_type=RepresentationalNN):
@@ -41,6 +107,8 @@ class RepresentationalPipeline(BasePipeline):
         self.classify = (hyperparams['repr'] == "auto_enc_conditional")
         self.classify_lambda = hyperparams['rep-class-lambda']
         self.sup_contrastive = (hyperparams['repr'] == "auto_enc_sup_contrastive")
+        warnings.warn("Enforces unsup cont loss", UserWarning)
+        self.unsup_contrastive = True
         self.contrast_lambda = hyperparams['rep-contrast-lambda']
         self.temperature = hyperparams["rep-temperature"]
         self.loss = nn.MSELoss()
@@ -91,46 +159,52 @@ class RepresentationalPipeline(BasePipeline):
         contrast_loss_items = 0
         contrast_loss_log = 0
 
-        if self.classify:
-            opt_head.zero_grad()
-            out_batch, label_out, label_truth = self.model(batch, classify=True)
-            label_loss = self.classify_lambda * self._get_loss(self.classify_loss, label_out, label_truth)
-            label_loss_log = label_loss.item()
-
-        elif self.sup_contrastive:
-            enc = self.model.encode(batch)
-            for v in batch:
-                if v in self.model.encode_v:
-                    rep_v = enc[v]
-                    label_rep_size = self.rep_size // len(self.cg.pa[v])
-                    pa_v = [x for x in self.cg.v if x in self.cg.pa[v]]
-                    for i, pa in enumerate(pa_v):
-                        labels = batch[pa]
-                        if labels.shape[1] == 1:
-                            labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
-                        else:
-                            raise NotImplementedError("Higher dimensional labels not yet supported.")
-
-                        rep_pa = rep_v[:, label_rep_size * i:label_rep_size * (i + 1)]
-                        similarity_matrix = T.matmul(rep_pa, rep_pa.T) / self.temperature
-
-                        mask = T.eye(labels.shape[0], dtype=T.bool).to(self.device)
-                        labels = labels[~mask].view(labels.shape[0], -1)
-                        similarity_matrix = similarity_matrix[~mask].view(similarity_matrix.shape[0], -1)
-
-                        loss_vals = T.softmax(similarity_matrix, dim=1)
-                        loss_vals = T.sum(loss_vals * labels, dim=1) / (2 * T.sum(labels, dim=1) + 1e-8)
-                        contrast_loss += T.mean(-log(loss_vals))
-                        contrast_loss_items += 1
-
-            contrast_loss = self.contrast_lambda * (contrast_loss / contrast_loss_items)
-            contrast_loss_log = contrast_loss.item()
-            out_batch = self.model.decode(enc)
+        if self.unsup_contrastive:
+            # TODO: find a clean way to handle this
+            loss = nt_xent_loss(batch, self.model, self.temperature)
 
         else:
-            out_batch = self.model(batch)
+            if self.classify:
+                opt_head.zero_grad()
+                out_batch, label_out, label_truth = self.model(batch, classify=True)
+                label_loss = self.classify_lambda * self._get_loss(self.classify_loss, label_out, label_truth)
+                label_loss_log = label_loss.item()
 
-        loss = self._get_loss(self.loss, out_batch, batch)
+            elif self.sup_contrastive:
+                enc = self.model.encode(batch)
+                for v in batch:
+                    if v in self.model.encode_v:
+                        rep_v = enc[v]
+                        label_rep_size = self.rep_size // len(self.cg.pa[v])
+                        pa_v = [x for x in self.cg.v if x in self.cg.pa[v]]
+                        for i, pa in enumerate(pa_v):
+                            labels = batch[pa]
+                            if labels.shape[1] == 1:
+                                labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+                            else:
+                                raise NotImplementedError("Higher dimensional labels not yet supported.")
+
+                            rep_pa = rep_v[:, label_rep_size * i:label_rep_size * (i + 1)]
+                            similarity_matrix = T.matmul(rep_pa, rep_pa.T) / self.temperature
+
+                            mask = T.eye(labels.shape[0], dtype=T.bool).to(self.device)
+                            labels = labels[~mask].view(labels.shape[0], -1)
+                            similarity_matrix = similarity_matrix[~mask].view(similarity_matrix.shape[0], -1)
+
+                            loss_vals = T.softmax(similarity_matrix, dim=1)
+                            loss_vals = T.sum(loss_vals * labels, dim=1) / (2 * T.sum(labels, dim=1) + 1e-8)
+                            contrast_loss += T.mean(-log(loss_vals))
+                            contrast_loss_items += 1
+
+                contrast_loss = self.contrast_lambda * (contrast_loss / contrast_loss_items)
+                contrast_loss_log = contrast_loss.item()
+                out_batch = self.model.decode(enc)
+
+            else:
+                out_batch = self.model(batch)
+
+            loss = self._get_loss(self.loss, out_batch, batch)
+        
         recon_loss_log = loss.item()
 
         loss = loss + label_loss + contrast_loss
