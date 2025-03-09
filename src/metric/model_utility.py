@@ -8,7 +8,7 @@ from src.pipeline import GANPipeline, GANReprPipeline
 from src.scm.ncm import GAN_NCM
 from src.scm.repr_nn.representation_nn import RepresentationalNN
 from src.ds import CausalGraph
-from src.datagen import ColorMNISTDataGenerator, CelebADataGenerator, SCMDataset,  get_transform
+from src.datagen import ColorMNISTDataGenerator, AgeCifarDataGenerator, SCMDataset,  get_transform
 from src.pipeline.repr_pipeline import RepresentationalPipeline
 from src.datagen import SCMDataTypes as sdt
 
@@ -19,7 +19,7 @@ valid_pipelines = {
 }
 valid_generators = {
     "ColorMNISTDataGenerator": ColorMNISTDataGenerator,
-    "CelebADataGenerator": CelebADataGenerator
+    "AgeCifarDataGenerator": AgeCifarDataGenerator
 }
 architectures = {
     "GAN_NCM": GAN_NCM

@@ -29,15 +29,7 @@ for i in range(args.img_grids):
             vis.show_image_grid(img_batch[img_var])
 
 
-if dir_params["gen"] == "CelebADataGenerator":
-    #test_var = 'bald'
-    test_var = 'mustache'
-    #test_var = 'eyeglasses'
-    y1 = CTFTerm({'image'}, {}, {'image': 1})
-    x1 = CTFTerm({test_var}, {}, {test_var: 1})
-    x0 = CTFTerm({test_var}, {}, {test_var: -1})
-    y1dox1 = CTFTerm({'image'}, {test_var: 1}, {'image': 1})
-elif dir_params["gen"] == "ColorMNISTDataGenerator":
+if dir_params["gen"] == "ColorMNISTDataGenerator":
     test_var = "digit"
     test_val_1_raw = 0
     test_val_2_raw = 5

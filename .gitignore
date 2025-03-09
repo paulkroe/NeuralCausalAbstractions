@@ -5,6 +5,8 @@ out/
 # data
 dat/mnist
 dat/cifar
+CIFAR/
+MNIST/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

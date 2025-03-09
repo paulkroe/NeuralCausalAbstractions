@@ -74,11 +74,13 @@ class AgeCifarDataGenerator(SCMDataGenerator):
 
         self.v_size = {
             'age': 1,
+            'one_hot_animal': self.n_classes,
             'animal': 3,
             'old': 1
         }
         self.v_type = {
             'age': sdt.REAL,
+            'one_hot_animal': sdt.ONE_HOT,
             'animal': sdt.IMAGE,
             'old': sdt.BINARY_ONES
         }
@@ -107,7 +109,12 @@ class AgeCifarDataGenerator(SCMDataGenerator):
             age = []
             for idx in animal_indices:
                 age.append(np.random.uniform(0, self.life_expectancy[self.indices_animal_classes[idx]]))
+
             u_conf = [(animal_indices[i], age[i]) for i in range(n)]
+
+
+        if "age" in do:
+            age = do["age"]
 
         if "animal" in do:
             animal = do["animal"]
@@ -119,11 +126,15 @@ class AgeCifarDataGenerator(SCMDataGenerator):
             sample_idx = np.random.randint(0, len(self.train_animal_dict[animal_idx[i]]))
             animal[i] = self.train_animal_dict[animal_idx[i]][sample_idx, :]
 
+        one_hot_animal = T.zeros((n, self.n_classes))
+        one_hot_animal[T.arange(n), [i - 2 for i in animal_idx]] = 1 # subtract 2 since original indices are 2-7
+
         old = []
         for i in range(n):
             old.append(1 if age[i] > self.life_expectancy[self.indices_animal_classes[animal_idx[i]]] / 2 else 0)       
  
         data = {
+            'one_hot_animal': one_hot_animal.float(),
             'animal': T.stack(animal, dim=0),
             'age': T.Tensor(age).float().unsqueeze(1),
             'old': T.Tensor(old).float().unsqueeze(1)

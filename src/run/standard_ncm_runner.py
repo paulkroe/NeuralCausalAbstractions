@@ -247,9 +247,9 @@ class NCMRunner(BaseRunner):
                             vis.show_image_grid(img_sample_fake[img_var], dir=f'{d}/before_train_fake_{img_var}.png')
                 else:
                     Q_real = dat_m.calculate_query(model=None, tau=use_tau, m=100000,
-                                                   evaluating=True).item()
+                                                    evaluating=True).item()
                     Q_estimate = dat_m.calculate_query(model=m.ncm, tau=use_tau, m=100000,
-                                                       evaluating=True).item()
+                                                    evaluating=True).item()
                     print("Q real: {}".format(Q_real))
                     print("Q estimate: {}".format(Q_estimate))
                     print("Q error: {}".format(Q_estimate - Q_real))

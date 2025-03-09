@@ -32,6 +32,8 @@ def show_image_grid(batch, dir=None, title="Images"):
 
 
 def show_image_timeline(img_list, dir=None):
+    if len(img_list) == 0:
+        return
     """
     Shows animation of images during training.
 
