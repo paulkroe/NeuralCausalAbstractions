@@ -1,9 +1,11 @@
 <NODES>
+one_hot_animal
 animal
 age
 old
 
 <EDGES>
-animal <-> age
+one_hot_animal <-> age
+one_hot_animal -> animal
 animal -> old
 age -> old
