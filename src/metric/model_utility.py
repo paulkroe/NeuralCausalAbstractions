@@ -11,6 +11,7 @@ from src.ds import CausalGraph
 from src.datagen import ColorMNISTDataGenerator, AgeCifarDataGenerator, SCMDataset,  get_transform
 from src.pipeline.repr_pipeline import RepresentationalPipeline
 from src.datagen import SCMDataTypes as sdt
+import warnings
 
 
 valid_pipelines = {
@@ -107,7 +108,10 @@ def load_model(d, verbose=False):
     if hyperparams['repr'] != "none":
         if dir_params["pipeline"] != "GANReprPipeline":
             rep_m = RepresentationalPipeline(dat_set, cg, v_size, v_type, hyperparams=hyperparams)
-            rep_m.load_state_dict(T.load('{}/best_rep.th'.format(d)))
+            if os.isfile("{}/best_rep.th".format(d)):
+                rep_m.load_state_dict(T.load('{}/best_rep.th'.format(d)))
+            else:
+                warnings.warn("No representation model found. Using untrained pipeline.")
             if verbose:
                 print("Printing representation model...")
                 for v in rep_m.model.encode_v:
