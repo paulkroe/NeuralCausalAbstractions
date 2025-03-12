@@ -1,3 +1,4 @@
+import wandb
 import torch as T
 import torch.nn as nn
 import pytorch_lightning as pl
@@ -110,6 +111,7 @@ class RepresentationalPipeline(BasePipeline):
         self.unsup_contrastive = hyperparams['rep-contrastive-loss']
         self.contrast_lambda = hyperparams['rep-contrast-lambda']
         self.temperature = hyperparams["rep-temperature"]
+        self.wandb = hyperparams["wandb"]
         self.loss = nn.MSELoss()
         self.classify_loss = nn.BCELoss()
 
@@ -223,3 +225,12 @@ class RepresentationalPipeline(BasePipeline):
             self.log('label_loss', label_loss_log, prog_bar=True)
         if self.sup_contrastive or self.unsup_contrastive:
             self.log('contr_loss', contrast_loss_log, prog_bar=True)
+        
+        if self.wandb:
+            wandb.log({
+                "train_loss": loss.item(),
+                "recon_loss": recon_loss_log,
+                "label_loss": label_loss_log if self.classify else None,
+                "contrast_loss": contrast_loss_log if (self.sup_contrastive or self.unsup_contrastive) else None,
+            })
+

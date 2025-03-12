@@ -1,6 +1,7 @@
 # Logging error and output
 err/
 out/
+wandb/
 
 # data
 dat/mnist

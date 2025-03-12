@@ -1,13 +1,17 @@
 import os
 import argparse
-
+import wandb
 import numpy as np
+from dotenv import load_dotenv
 
 from src.pipeline import GANPipeline, GANReprPipeline
 from src.scm.ncm import GAN_NCM
 from src.run import NCMRunner, MinMaxNCMRunner
 from src.datagen import ColorMNISTDataGenerator, BMIDataGenerator, AgeCifarDataGenerator
 from src.datagen.scm_datagen import SCMDataTypes as sdt
+
+load_dotenv()
+wandb_api_key = os.getenv("WANDB_API_KEY")
 
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
 
@@ -44,6 +48,10 @@ parser.add_argument('name', help="name of the experiment")
 parser.add_argument('mode', help="type of experiment")
 parser.add_argument('gen', help="data generating model")
 parser.add_argument('pipeline', help="pipeline to use")
+
+parser.add_argument('--wandb', action="store_true", help="trace run with wandb")
+parser.add_argument('--wandb-project-name', type=str, default=None, help="wandb project name")
+parser.add_argument('--wandb-org-name', type=str, default=None, help="wandb organization name")
 
 # Hyper-parameters for optimization
 parser.add_argument('--lr', type=float, default=1e-4, help="generator optimizer learning rate (default: 1e-4)")
@@ -135,6 +143,14 @@ gan_arch_choice = args.gan_arch.lower()
 repr_choice = args.repr.lower()
 repr_type_choice = args.rep_type.lower()
 
+if args.wandb:
+    assert args.wandb_project_name is not None
+    assert args.wandb_org_name is not None
+    if wandb_api_key:
+        wandb.login(key=wandb_api_key)
+    else:
+        raise ValueError("WANDB_API_KEY not found. Please check your .env file.")
+
 assert mode_choice in mode_choices
 assert pipeline_choice in valid_pipelines
 assert gen_choice in valid_generators
@@ -210,7 +226,10 @@ hyperparams = {
     'min-lambda': args.min_lambda,
     'use-tau': args.use_tau,
     'img-query': not args.custom_query,
-    'verbose': args.verbose
+    'verbose': args.verbose,
+    'wandb': args.wandb,
+    'wandb-project-name': args.wandb_project_name,
+    'wandb-org-name': args.wandb_org_name
 }
 
 print(hyperparams)

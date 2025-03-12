@@ -3,6 +3,7 @@ import glob
 import shutil
 import hashlib
 import json
+import wandb
 
 import numpy as np
 import torch as T
@@ -77,6 +78,10 @@ class NCMRunner(BaseRunner):
 
         if hyperparams is None:
             hyperparams = dict()
+
+        if hyperparams['wandb']:
+            wandb.init(project=hyperparams["wandb-project-name"], entity=hyperparams["wandb-org-name"])
+            wandb.config.update(hyperparams)
 
         with self.lock(f'{d}/lock', lockinfo) as acquired_lock:
             # Attempts to grab the lock for a particular trial. Only attempts the trial if the lock is obtained.
@@ -257,6 +262,7 @@ class NCMRunner(BaseRunner):
                 # Train model
                 trainer, checkpoint = self.create_trainer(d, "ncm", hyperparams['max-epochs'], hyperparams['patience'],
                                                           gpu)
+                
                 trainer.fit(m)  # Fit the pipeline on the data
                 #ckpt = T.load(checkpoint.best_model_path)  # Find best model
                 #m.load_state_dict(ckpt['state_dict'])  # Save best model
@@ -299,6 +305,9 @@ class NCMRunner(BaseRunner):
                     }
                     with open(f'{d}/results.json', 'w') as file:
                         json.dump(results, file)
+
+                if hyperparams['wandb']:
+                    wandb.finish()
 
                 return m
             except Exception:
