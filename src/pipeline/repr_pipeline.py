@@ -107,8 +107,7 @@ class RepresentationalPipeline(BasePipeline):
         self.classify = (hyperparams['repr'] == "auto_enc_conditional")
         self.classify_lambda = hyperparams['rep-class-lambda']
         self.sup_contrastive = (hyperparams['repr'] == "auto_enc_sup_contrastive")
-        warnings.warn("Enforces unsup cont loss", UserWarning)
-        self.unsup_contrastive = True
+        self.unsup_contrastive = hyperparams['rep-contrastive-loss']
         self.contrast_lambda = hyperparams['rep-contrast-lambda']
         self.temperature = hyperparams["rep-temperature"]
         self.loss = nn.MSELoss()
@@ -158,52 +157,51 @@ class RepresentationalPipeline(BasePipeline):
         contrast_loss = 0
         contrast_loss_items = 0
         contrast_loss_log = 0
+ 
+        if self.classify:
+            opt_head.zero_grad()
+            out_batch, label_out, label_truth = self.model(batch, classify=True)
+            label_loss = self.classify_lambda * self._get_loss(self.classify_loss, label_out, label_truth)
+            label_loss_log = label_loss.item()
 
         if self.unsup_contrastive:
-            # TODO: find a clean way to handle this
-            loss = nt_xent_loss(batch, self.model, self.temperature)
+            contrast_loss = nt_xent_loss(batch, self.model, self.temperature)
+            contrast_loss_log = contrast_loss.item()
+
+        elif self.sup_contrastive:
+            enc = self.model.encode(batch)
+            for v in batch:
+                if v in self.model.encode_v:
+                    rep_v = enc[v]
+                    label_rep_size = self.rep_size // len(self.cg.pa[v])
+                    pa_v = [x for x in self.cg.v if x in self.cg.pa[v]]
+                    for i, pa in enumerate(pa_v):
+                        labels = batch[pa]
+                        if labels.shape[1] == 1:
+                            labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+                        else:
+                            raise NotImplementedError("Higher dimensional labels not yet supported.")
+
+                        rep_pa = rep_v[:, label_rep_size * i:label_rep_size * (i + 1)]
+                        similarity_matrix = T.matmul(rep_pa, rep_pa.T) / self.temperature
+
+                        mask = T.eye(labels.shape[0], dtype=T.bool).to(self.device)
+                        labels = labels[~mask].view(labels.shape[0], -1)
+                        similarity_matrix = similarity_matrix[~mask].view(similarity_matrix.shape[0], -1)
+
+                        loss_vals = T.softmax(similarity_matrix, dim=1)
+                        loss_vals = T.sum(loss_vals * labels, dim=1) / (2 * T.sum(labels, dim=1) + 1e-8)
+                        contrast_loss += T.mean(-log(loss_vals))
+                        contrast_loss_items += 1
+
+            contrast_loss = self.contrast_lambda * (contrast_loss / contrast_loss_items)
+            contrast_loss_log = contrast_loss.item()
+            out_batch = self.model.decode(enc)
 
         else:
-            if self.classify:
-                opt_head.zero_grad()
-                out_batch, label_out, label_truth = self.model(batch, classify=True)
-                label_loss = self.classify_lambda * self._get_loss(self.classify_loss, label_out, label_truth)
-                label_loss_log = label_loss.item()
+            out_batch = self.model(batch)
 
-            elif self.sup_contrastive:
-                enc = self.model.encode(batch)
-                for v in batch:
-                    if v in self.model.encode_v:
-                        rep_v = enc[v]
-                        label_rep_size = self.rep_size // len(self.cg.pa[v])
-                        pa_v = [x for x in self.cg.v if x in self.cg.pa[v]]
-                        for i, pa in enumerate(pa_v):
-                            labels = batch[pa]
-                            if labels.shape[1] == 1:
-                                labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
-                            else:
-                                raise NotImplementedError("Higher dimensional labels not yet supported.")
-
-                            rep_pa = rep_v[:, label_rep_size * i:label_rep_size * (i + 1)]
-                            similarity_matrix = T.matmul(rep_pa, rep_pa.T) / self.temperature
-
-                            mask = T.eye(labels.shape[0], dtype=T.bool).to(self.device)
-                            labels = labels[~mask].view(labels.shape[0], -1)
-                            similarity_matrix = similarity_matrix[~mask].view(similarity_matrix.shape[0], -1)
-
-                            loss_vals = T.softmax(similarity_matrix, dim=1)
-                            loss_vals = T.sum(loss_vals * labels, dim=1) / (2 * T.sum(labels, dim=1) + 1e-8)
-                            contrast_loss += T.mean(-log(loss_vals))
-                            contrast_loss_items += 1
-
-                contrast_loss = self.contrast_lambda * (contrast_loss / contrast_loss_items)
-                contrast_loss_log = contrast_loss.item()
-                out_batch = self.model.decode(enc)
-
-            else:
-                out_batch = self.model(batch)
-
-            loss = self._get_loss(self.loss, out_batch, batch)
+        loss = self._get_loss(self.loss, out_batch, batch)
         
         recon_loss_log = loss.item()
 
@@ -223,5 +221,5 @@ class RepresentationalPipeline(BasePipeline):
         self.log('recon_loss', recon_loss_log, prog_bar=True)
         if self.classify:
             self.log('label_loss', label_loss_log, prog_bar=True)
-        if self.sup_contrastive:
+        if self.sup_contrastive or self.unsup_contrastive:
             self.log('contr_loss', contrast_loss_log, prog_bar=True)

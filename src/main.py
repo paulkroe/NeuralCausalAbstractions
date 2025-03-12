@@ -84,6 +84,7 @@ parser.add_argument('--rep-contrast-lambda', type=float, default=0.1, help="weig
 parser.add_argument('--rep-no-decoder', action="store_true", help="do not train decoder")
 parser.add_argument('--rep-max-epochs', type=int, default=None, help="maximum number of training epochs for representation")
 parser.add_argument('--rep-patience', type=int, default=None, help="patience for early stopping in representation")
+parser.add_argument('--rep-contrastive-loss', action="store_true", help="use contrastive loss when training representations")
 
 # Hyper-parameters for GAN-NCM
 parser.add_argument('--gan-mode', default="vanilla", help="GAN loss function (default: vanilla)")
@@ -201,6 +202,7 @@ hyperparams = {
     'rep-no-decoder': args.rep_no_decoder,
     'rep-max-epochs': args.rep_max_epochs if args.rep_max_epochs is not None else args.max_epochs,
     'rep-patience': args.rep_patience if args.rep_patience is not None and args.rep_patience > 0 else args.rep_max_epochs,
+    'rep-contrastive-loss': args.rep_contrastive_loss,
     'identify': args.mode == "identify",
     'normalize': not args.no_normalize,
     'id-reruns': args.n_reruns,
