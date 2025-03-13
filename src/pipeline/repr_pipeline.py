@@ -12,7 +12,6 @@ from .base_pipeline import BasePipeline
 import warnings
 import torchvision.transforms as transforms
 
-
 def log(x):
     return T.log(x + 1e-8)
 
@@ -103,12 +102,12 @@ class RepresentationalPipeline(BasePipeline):
         self.batch_size = hyperparams["rep-bs"]
         self.grad_acc = hyperparams["rep-grad-acc"]
         self.lr = hyperparams["rep-lr"]
-        self.train_encoder = (hyperparams['repr'] != "auto_enc_notrain")
-        self.train_decoder = not hyperparams['rep-no-decoder']
-        self.classify = (hyperparams['repr'] == "auto_enc_conditional")
+        self.train = hyperparams["rep-train"]
+        self.pred_parents = hyperparams['rep-pred-parents']
+        self.reconstruct = hyperparams['rep-reconstruct']
+        self.unsup_contrastive = hyperparams['rep-unsup-contrastive']
+        self.sup_contrastive = hyperparams['rep-sup-contrastive']
         self.classify_lambda = hyperparams['rep-class-lambda']
-        self.sup_contrastive = (hyperparams['repr'] == "auto_enc_sup_contrastive")
-        self.unsup_contrastive = hyperparams['rep-contrastive-loss']
         self.contrast_lambda = hyperparams['rep-contrast-lambda']
         self.temperature = hyperparams["rep-temperature"]
         self.wandb = hyperparams["wandb"]
@@ -120,14 +119,14 @@ class RepresentationalPipeline(BasePipeline):
             print(self.model.encoders)
             print("DECODER")
             print(self.model.decoders)
-            if self.classify:
+            if self.pred_parents:
                 print("PARENT HEADS")
                 print(self.model.parent_heads)
 
     def configure_optimizers(self):
         opt_enc = T.optim.Adam(self.model.encoders.parameters(), lr=self.lr)
         opt_dec = T.optim.Adam(self.model.decoders.parameters(), lr=self.lr)
-        if self.classify:
+        if self.pred_parents:
             opt_head = T.optim.Adam(self.model.parent_heads.parameters(), lr=self.lr)
             return opt_enc, opt_dec, opt_head
         return opt_enc, opt_dec
@@ -140,13 +139,10 @@ class RepresentationalPipeline(BasePipeline):
 
     def training_step(self, batch, batch_idx):
 
-        if not (self.train_encoder or self.train_decoder or self.classify):
+        if not self.train:
             warnings.warn("No component is training", UserWarning)
 
-        if not (self.train_encoder or self.train_decoder or self.classify):
-            return
-
-        if self.classify:
+        if self.pred_parents:
             opt_enc, opt_dec, opt_head = self.optimizers()
         else:
             opt_enc, opt_dec = self.optimizers()
@@ -154,23 +150,30 @@ class RepresentationalPipeline(BasePipeline):
         opt_enc.zero_grad()
         opt_dec.zero_grad()
 
-        label_loss = 0
-        label_loss_log = 0
-        contrast_loss = 0
         contrast_loss_items = 0
-        contrast_loss_log = 0
- 
-        if self.classify:
+
+        loss_pred_parents = 0
+        loss_pred_parents_log = 0
+        loss_unsup_contrastive = 0
+        loss_unsup_contrastive_log = 0
+        loss_sup_contrastive = 0
+        loss_sup_contrastive_log = 0
+        loss_reconstruct = 0
+        loss_reconstruct_log = 0
+
+        # TODO: we have multiple forwardpasses in this step. might want to consolidate some of them
+
+        if self.pred_parents:
             opt_head.zero_grad()
             out_batch, label_out, label_truth = self.model(batch, classify=True)
-            label_loss = self.classify_lambda * self._get_loss(self.classify_loss, label_out, label_truth)
-            label_loss_log = label_loss.item()
+            loss_pred_parents = self.classify_lambda * self._get_loss(self.classify_loss, label_out, label_truth)
+            loss_pred_parents_log = loss_pred_parents.item()
 
         if self.unsup_contrastive:
-            contrast_loss = nt_xent_loss(batch, self.model, self.temperature)
-            contrast_loss_log = contrast_loss.item()
+            loss_unsup_contrastive = nt_xent_loss(batch, self.model, self.temperature)
+            loss_unsup_contrastive_log = loss_unsup_contrastive.item()
 
-        elif self.sup_contrastive:
+        if self.sup_contrastive:
             enc = self.model.encode(batch)
             for v in batch:
                 if v in self.model.encode_v:
@@ -193,44 +196,46 @@ class RepresentationalPipeline(BasePipeline):
 
                         loss_vals = T.softmax(similarity_matrix, dim=1)
                         loss_vals = T.sum(loss_vals * labels, dim=1) / (2 * T.sum(labels, dim=1) + 1e-8)
-                        contrast_loss += T.mean(-log(loss_vals))
+                        loss_sup_contrastive += T.mean(-log(loss_vals))
                         contrast_loss_items += 1
 
-            contrast_loss = self.contrast_lambda * (contrast_loss / contrast_loss_items)
-            contrast_loss_log = contrast_loss.item()
+            loss_sup_contrastive = self.contrast_lambda * (loss_sup_contrastive / contrast_loss_items)
+            loss_sup_contrastive_log = loss_sup_contrastive.item()
             out_batch = self.model.decode(enc)
 
-        else:
+        if self.reconstruct:
             out_batch = self.model(batch)
+            loss_reconstruct = self._get_loss(self.loss, out_batch, batch)
+            loss_reconstruct_log = loss_reconstruct.item()
 
-        loss = self._get_loss(self.loss, out_batch, batch)
+        loss = loss_reconstruct + loss_pred_parents + loss_unsup_contrastive + loss_sup_contrastive
         
-        recon_loss_log = loss.item()
-
-        loss = loss + label_loss + contrast_loss
         self.manual_backward(loss)
 
         if ((batch_idx + 1) % self.grad_acc) == 0:
-            if self.train_encoder:
+            if self.train:
                 opt_enc.step()
-            if self.classify:
+            if self.pred_parents:
                 opt_head.step()
-            if self.train_decoder:
+            if self.reconstruct or self.sup_contrastive:
                 opt_dec.step()
 
         # logging
         self.log('train_loss', loss.item(), prog_bar=True)
-        self.log('recon_loss', recon_loss_log, prog_bar=True)
-        if self.classify:
-            self.log('label_loss', label_loss_log, prog_bar=True)
-        if self.sup_contrastive or self.unsup_contrastive:
-            self.log('contr_loss', contrast_loss_log, prog_bar=True)
-        
+        if self.reconstruct:
+            self.log('reconstruction_loss', loss_reconstruct_log, prog_bar=True)
+        if self.pred_parents:
+            self.log('pred_parents_loss', loss_pred_parents_log, prog_bar=True)
+        if self.sup_contrastive:
+            self.log('sup_contrastive_loss', loss_sup_contrastive_log, prog_bar=True)
+        if self.unsup_contrastive:
+            self.log('unsup_contrastive_loss', loss_unsup_contrastive_log, prog_bar=True)
+
         if self.wandb:
             wandb.log({
                 "train_loss": loss.item(),
-                "recon_loss": recon_loss_log,
-                "label_loss": label_loss_log if self.classify else None,
-                "contrast_loss": contrast_loss_log if (self.sup_contrastive or self.unsup_contrastive) else None,
+                "reconstruction_loss": loss_reconstruct_log if self.reconstruct else None,
+                "pred_parents_loss": loss_pred_parents_log if self.pred_parents else None,
+                "sup_contrastive_loss": loss_sup_contrastive_log if self.sup_contrastive else None,
+                "unsup_contrastive_loss": loss_unsup_contrastive_log if self.unsup_contrastive else None
             })
-

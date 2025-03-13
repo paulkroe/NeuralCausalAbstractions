@@ -168,7 +168,7 @@ class NCMRunner(BaseRunner):
                         rep_v_size = {v: hyperparams['rep-size'] for v in v_type}
                         rep_v_type = {v: hyperparams['rep-type'] for v in v_type}
 
-                elif hyperparams['repr'] != "none":
+                elif not hyperparams['no-repr']:
                     rep_m = self.rep_pipeline(dat_set, cg, v_size, v_type, hyperparams=hyperparams)
 
                     # Check if representation model already exists
@@ -199,7 +199,7 @@ class NCMRunner(BaseRunner):
                                                                           hyperparams['rep-patience'], gpu)
                         # in this case we are not training the representation model
                         print("Training representation model...")
-                        if not ((hyperparams['repr'] == "auto_enc_notrain") and hyperparams['rep-no-decoder']):
+                        if hyperparams['rep-train']:
                             rep_trainer.fit(rep_m)
                             ckpt = T.load(rep_checkpoint.best_model_path)  # Find best model
                             rep_m.load_state_dict(ckpt['state_dict'])

@@ -41,7 +41,7 @@ class RepresentationalNN(nn.Module):
         })
 
         self.parent_heads = None
-        if hyperparams['repr'] == "auto_enc_conditional":
+        if hyperparams["rep-pred-parents"]:
             self.parent_heads = nn.ModuleDict({
                 v: nn.Sequential(nn.Linear(hyperparams['rep-size'], sum([v_size[x] for x in cg.pa[v]])),
                                  nn.Sigmoid())

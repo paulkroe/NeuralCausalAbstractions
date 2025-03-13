@@ -105,7 +105,7 @@ def load_model(d, verbose=False):
     rep_m = None
     rep_v_size = {k: v for (k, v) in v_size.items()}
     rep_v_type = {k: v for (k, v) in v_type.items()}
-    if hyperparams['repr'] != "none":
+    if not hyperparams['no-repr']:
         if dir_params["pipeline"] != "GANReprPipeline":
             rep_m = RepresentationalPipeline(dat_set, cg, v_size, v_type, hyperparams=hyperparams)
             if os.path.isfile("{}/best_rep.th".format(d)):

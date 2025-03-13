@@ -35,12 +35,12 @@ id_pipelines = {"gan"}
 gan_choices = {"vanilla", "bgan", "wgan", "wgangp"}
 gan_arch_choices = {"dcgan", "biggan"}
 gan_disc_choices = {"standard", "biggan"}
-repr_choices = {"none", "auto_enc", "auto_enc_notrain", "auto_enc_conditional", "auto_enc_sup_contrastive"}
 type_choices = {
     "real": sdt.REAL,
     "binary": sdt.REP_BINARY,
     "ones": sdt.REP_BINARY_ONES
 }
+
 
 # Basic setup settings
 parser = argparse.ArgumentParser(description="Basic Runner")
@@ -73,7 +73,7 @@ parser.add_argument('--neural-pu', action="store_true", help="use neural paramet
 parser.add_argument('--batch-norm', action="store_true", help="set flag to use batch norm")
 
 # Hyper-parameters for representational NNs
-parser.add_argument('--repr', default="none", help="Choice of representation learning (default: none)")
+parser.add_argument('--no-repr', action="store_true", help="disable representation learning")
 parser.add_argument('--rep-size', type=int, default=8, help="Size of representational embedding (default: 8)")
 parser.add_argument('--rep-type', default="real", help="Data type of representational embedding (default: real)")
 parser.add_argument('--rep-image-only', action="store_true",
@@ -89,10 +89,13 @@ parser.add_argument('--rep-class-lambda', type=float, default=0.1,
                     help="weight for classification loss in conditional encoder")
 parser.add_argument('--rep-temperature', type=float, default=1.0, help="temperature for contrastive loss")
 parser.add_argument('--rep-contrast-lambda', type=float, default=0.1, help="weight for contrastive loss in encoder")
-parser.add_argument('--rep-no-decoder', action="store_true", help="do not train decoder")
 parser.add_argument('--rep-max-epochs', type=int, default=None, help="maximum number of training epochs for representation")
 parser.add_argument('--rep-patience', type=int, default=None, help="patience for early stopping in representation")
-parser.add_argument('--rep-contrastive-loss', action="store_true", help="use contrastive loss when training representations")
+parser.add_argument('--rep-reconstruct', action="store_true", help="use reconstruction loss when learning representations")
+parser.add_argument('--rep-unsup-contrastive', action="store_true", help="use unsupervised contrastive loss when learning representations")
+parser.add_argument('--rep-sup-contrastive', action="store_true", help="use supervised contrastive loss when learning representations")
+parser.add_argument('--rep-pred-parents', action="store_true", help="use loss from predicting parents when training representations")
+
 
 # Hyper-parameters for GAN-NCM
 parser.add_argument('--gan-mode', default="vanilla", help="GAN loss function (default: vanilla)")
@@ -140,7 +143,6 @@ pipeline_choice = args.pipeline.lower()
 gen_choice = args.gen.lower()
 gan_choice = args.gan_mode.lower()
 gan_arch_choice = args.gan_arch.lower()
-repr_choice = args.repr.lower()
 repr_type_choice = args.rep_type.lower()
 
 if args.wandb:
@@ -156,7 +158,6 @@ assert pipeline_choice in valid_pipelines
 assert gen_choice in valid_generators
 assert gan_choice in gan_choices
 assert gan_arch_choice in gan_arch_choices
-assert repr_choice in repr_choices
 assert repr_type_choice in type_choices
 
 if args.mode == "identify":
@@ -202,7 +203,7 @@ hyperparams = {
     'gp-weight': args.gp_weight,
     'gp-one-side': args.gp_one_side,
     'img-size': args.img_size,
-    'repr': repr_choice,
+    'no-repr': args.no_repr,
     'rep-size': args.rep_size,
     'rep-type': type_choices[repr_type_choice],
     'rep-image-only': args.rep_image_only,
@@ -215,10 +216,13 @@ hyperparams = {
     'rep-class-lambda': args.rep_class_lambda,
     'rep-temperature': args.rep_temperature,
     'rep-contrast-lambda': args.rep_contrast_lambda,
-    'rep-no-decoder': args.rep_no_decoder,
     'rep-max-epochs': args.rep_max_epochs if args.rep_max_epochs is not None else args.max_epochs,
     'rep-patience': args.rep_patience if args.rep_patience is not None and args.rep_patience > 0 else args.rep_max_epochs,
-    'rep-contrastive-loss': args.rep_contrastive_loss,
+    'rep-reconstruct': args.rep_reconstruct,
+    'rep-unsup-contrastive': args.rep_unsup_contrastive,
+    'rep-sup-contrastive': args.rep_sup_contrastive,
+    'rep-pred-parents': args.rep_pred_parents,
+    'rep-train': args.rep_reconstruct or args.rep_unsup_contrastive or args.rep_sup_contrastive or args.rep_pred_parents,
     'identify': args.mode == "identify",
     'normalize': not args.no_normalize,
     'id-reruns': args.n_reruns,
@@ -231,7 +235,6 @@ hyperparams = {
     'wandb-project-name': args.wandb_project_name,
     'wandb-org-name': args.wandb_org_name
 }
-
 print(hyperparams)
 
 if pipeline_choice == "gan":

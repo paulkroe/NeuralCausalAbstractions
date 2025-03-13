@@ -24,9 +24,10 @@ class GANReprPipeline(GANPipeline):
                                       hyperparams=hyperparams)
 
         self.rep_lr = hyperparams["rep-lr"]
-        self.train_encoder = (hyperparams['repr'] != "auto_enc_notrain")
+        self.train_encoder = hyperparams['rep-train']
         self.train_decoder = not hyperparams['rep-no-decoder']
-        self.classify = (hyperparams['repr'] == "auto_enc_conditional")
+        self.pred_parents = hyperparams['rep-pred-parents']
+        self.classify = hyperparams['rep-pred-parent']
         self.classify_lambda = hyperparams['rep-class-lambda']
 
         self.recon_loss = nn.MSELoss()
