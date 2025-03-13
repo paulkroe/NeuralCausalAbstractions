@@ -10,9 +10,6 @@ from src.run import NCMRunner, MinMaxNCMRunner
 from src.datagen import ColorMNISTDataGenerator, BMIDataGenerator, AgeCifarDataGenerator
 from src.datagen.scm_datagen import SCMDataTypes as sdt
 
-load_dotenv()
-wandb_api_key = os.getenv("WANDB_API_KEY")
-
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
 
 valid_pipelines = {
@@ -148,10 +145,6 @@ repr_type_choice = args.rep_type.lower()
 if args.wandb:
     assert args.wandb_project_name is not None
     assert args.wandb_org_name is not None
-    if wandb_api_key:
-        wandb.login(key=wandb_api_key)
-    else:
-        raise ValueError("WANDB_API_KEY not found. Please check your .env file.")
 
 assert mode_choice in mode_choices
 assert pipeline_choice in valid_pipelines
