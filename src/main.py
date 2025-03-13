@@ -2,7 +2,6 @@ import os
 import argparse
 import wandb
 import numpy as np
-from dotenv import load_dotenv
 
 from src.pipeline import GANPipeline, GANReprPipeline
 from src.scm.ncm import GAN_NCM
