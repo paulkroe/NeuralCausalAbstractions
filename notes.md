@@ -1,12 +1,7 @@
 # Notes
-'neural-pu' in gan_ncm
-intuition behind contrastive loss
-when generating dataset, second part only needed for ctf term
+TODO:
 what are the args in the generator class doing?
-classify head in the repre class
 don't really understand how repr works in minmax_ncm_runner
-
-
 
 # **Wednesday, 2/26 – Meeting Notes**
 
