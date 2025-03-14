@@ -17,69 +17,85 @@ def log(x):
 
 def nt_xent_loss(batch, model, temperature=0.5):
     """
-    Computes the NT-Xent loss for a batch of images.
-    
+    Computes the NT-Xent loss for a batch of images with improvements:
+      - Correct positive pairing.
+      - Masking of self-similarity in the similarity matrix.
+      - Averaging loss over image keys.
+      - Cleaner augmentation via list comprehensions.
+
     Args:
-        batch (torch.Tensor): Input images of shape [batch_size, 3, 32, 32].
-        model (torch.nn.Module): Encoder model that maps images to representations.
+        batch (dict of torch.Tensor): Input images (or other modalities) with shape [batch_size, 3, 32, 32] for images.
+        model (torch.nn.Module): Encoder model that maps images to representations. It is assumed that model.v_type[key]
+                                 tells whether a given key corresponds to an image (e.g. sdt.IMAGE).
         temperature (float): Temperature parameter for scaling.
-        
+
     Returns:
-        torch.Tensor: Computed NT-Xent loss.
+        torch.Tensor: The averaged NT-Xent loss.
     """
+    import torch
+    import torch.nn.functional as F
+    import torchvision.transforms as transforms
 
-    loss = 0
+    device = next(model.parameters()).device
 
-    # Define SimCLR augmentations
+    loss_total = 0
+    num_image_keys = 0
+
+    # Define SimCLR augmentations.
     augmentation = transforms.Compose([
-        transforms.RandomResizedCrop(size=32, scale=(0.2, 1.0)),  # Random crop
-        transforms.ColorJitter(0.8, 0.8, 0.8, 0.2),  # Color distortion
+        transforms.RandomResizedCrop(size=32, scale=(0.2, 1.0)),
+        transforms.ColorJitter(0.8, 0.8, 0.8, 0.2),
     ])
-    batch_aug1 = {key: [] for key in batch.keys()}
-    batch_aug2 = {key: [] for key in batch.keys()}
 
+    # Create two augmented views for each key.
+    batch_aug1 = {}
+    batch_aug2 = {}
     for key in batch.keys():
-        for idx in range(batch[key].shape[0]):
-            if model.v_type[key] == sdt.IMAGE:
-                img = batch[key][idx]  # Shape: [3, 32, 32]
-                # Apply augmentations to get two views of each image
-                batch_aug1[key].append(augmentation(img))
-                batch_aug2[key].append(augmentation(img))
-            else:
-                batch_aug1[key].append(batch[key][idx])
-                batch_aug2[key].append(batch[key][idx])
+        imgs = batch[key]
+        if model.v_type[key] == sdt.IMAGE:
+            # Using list comprehensions for clarity.
+            batch_aug1[key] = torch.stack([augmentation(img) for img in imgs])
+            batch_aug2[key] = torch.stack([augmentation(img) for img in imgs])
+        else:
+            batch_aug1[key] = imgs
+            batch_aug2[key] = imgs
 
-    for key in batch.keys():
-        batch_aug1[key] = T.stack(batch_aug1[key], dim=0)
-        batch_aug2[key] = T.stack(batch_aug2[key], dim=0)
+    # Concatenate both views along the batch dimension.
+    batch_aug = {key: torch.cat([batch_aug1[key], batch_aug2[key]], dim=0) for key in batch.keys()}
 
-    # Concatenate both views along batch dimension
-    batch_aug = {key: T.cat([batch_aug1[key], batch_aug2[key]], dim=0) for key in batch.keys()}
-
-    # Forward pass through encoder
+    # Forward pass through the encoder.
     z = model.encode(batch_aug)
 
-    # TODO: this might be bad if we have multiple images of different importance
-    for key in z:
+    for key in z.keys():
         if model.v_type[key] == sdt.IMAGE:
-            z[key] = T.nn.functional.normalize(z[key], dim=1) # Normalize embeddings
+            num_image_keys += 1
+            # Normalize the embeddings.
+            z[key] = F.normalize(z[key], dim=1)
+            batch_size = z[key].shape[0] // 2
 
-            # Compute similarity matrix
-            sim_matrix = T.matmul(z[key], z[key].T)  # Shape: [2*batch_size, 2*batch_size]
-    
-            # Scale by temperature
+            # Compute the similarity matrix.
+            sim_matrix = torch.matmul(z[key], z[key].T)  # Shape: [2*batch_size, 2*batch_size]
             sim_matrix /= temperature
 
+            # Mask self-similarity (the diagonal) by setting it to -infinity.
+            mask = torch.eye(2 * batch_size, dtype=torch.bool, device=z[key].device)
+            sim_matrix.masked_fill_(mask, -float('inf'))
 
-            batch_size = z[key].shape[0] // 2
-            # Construct labels: each image should be most similar to its augmented pair
-            labels = T.cat([T.arange(batch_size) for _ in range(2)]).to(batch[key].device)
-            labels = labels + (labels >= batch_size).long() * batch_size  # Ensure correct alignment
+            # Construct labels:
+            # For indices [0, batch_size), positive is at i+batch_size.
+            # For indices [batch_size, 2*batch_size), positive is at i-batch_size.
+            labels = torch.cat([torch.arange(batch_size, 2 * batch_size),
+                                torch.arange(0, batch_size)]).to(z[key].device)
+            
+            # Compute cross-entropy loss for this key.
+            loss_key = F.cross_entropy(sim_matrix, labels)
+            loss_total += loss_key
 
-            # Compute cross-entropy loss
-            loss += T.nn.functional.cross_entropy(sim_matrix, labels)
+    # Average loss over the image keys.
+    if num_image_keys > 0:
+        loss_total /= num_image_keys
 
-    return loss
+    return loss_total
 
 class RepresentationalPipeline(BasePipeline):
     def __init__(self, datagen, cg, v_size, v_type, hyperparams=None, repr_model_type=RepresentationalNN):

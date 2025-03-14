@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import wandb
+
 import torch as T
 from torch.autograd import grad
 
@@ -11,6 +13,7 @@ from src.scm.scm import expand_do
 from src.datagen import SCMDataTypes as sdt
 
 from .base_pipeline import BasePipeline
+
 
 
 def log(x):
@@ -68,6 +71,8 @@ class GANPipeline(BasePipeline):
             print(self.ncm.f)
             print("DISCRIMINATOR")
             print(self.disc.f_disc)
+
+        self.wandb = hyperparams["wandb"]
 
     def forward(self, n=1000, u=None, do={}, evaluating=False):
         out = self.ncm(n, u, do, evaluating=evaluating)
@@ -248,3 +253,12 @@ class GANPipeline(BasePipeline):
         self.log('D_loss', total_d_loss, prog_bar=True)
         if self.optimize_query:
             self.log('Q_loss', q_loss_record, prog_bar=True)
+
+        if self.wandb:
+            wandb.log({
+                "Q_loss": q_loss_record,
+                "G_loss": g_loss_record,
+                "D_loss": total_d_loss,
+                "Q_loss": None if not self.optimize_query else None
+            })
+            
