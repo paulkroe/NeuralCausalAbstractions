@@ -256,7 +256,7 @@ class GANPipeline(BasePipeline):
 
         if self.wandb:
             wandb.log({
-                "Q_loss": q_loss_record,
+                None if not self. optimize_query else "Q_loss": q_loss_record,
                 "G_loss": g_loss_record,
                 "D_loss": total_d_loss,
                 "Q_loss": None if not self.optimize_query else None
