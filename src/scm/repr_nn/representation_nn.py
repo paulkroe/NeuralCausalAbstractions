@@ -48,6 +48,15 @@ class RepresentationalNN(nn.Module):
                 for v in self.encode_v
             })
 
+        self.proj_heads = None
+        if hyperparams["rep-unsup-contrastive"]:
+            self.proj_heads = nn.ModuleDict({
+                v: nn.Sequential(nn.Linear(hyperparams['rep-size'], hyperparams['rep-size']),
+                                 nn.ReLU(),
+                                 nn.Linear(hyperparams['rep-size'], hyperparams['rep-size'] // 4))
+                for v in self.encode_v
+            })
+
         self.device_param = nn.Parameter(T.empty(0))
 
     def encode(self, v_dict):
@@ -81,10 +90,19 @@ class RepresentationalNN(nn.Module):
 
         return out, truth
 
-    def forward(self, v_dict, classify=False):
+    def project(self, rep_dict):
+        return {
+            v: self.proj_heads[v](rep_dict[v]) if v in self.encode_v else rep_dict[v] for v in rep_dict
+        }
+
+    def forward(self, v_dict, classify=False, projection=False):
         if classify:
             rep_dict = self.encode(v_dict)
             label_out, label_truth = self.classify(v_dict, rep_dict)
             recon = self.decode(rep_dict)
             return recon, label_out, label_truth
+        if projection:
+            rep_dict = self.encode(v_dict)
+            proj = self.project(rep_dict)
+            return proj
         return self.decode(self.encode(v_dict))

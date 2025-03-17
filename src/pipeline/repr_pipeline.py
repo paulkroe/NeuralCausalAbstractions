@@ -15,87 +15,81 @@ import torchvision.transforms as transforms
 def log(x):
     return T.log(x + 1e-8)
 
-def nt_xent_loss(batch, model, temperature=0.5):
+def nt_xent_loss(batch, model, temperature=0.1):
+    # todo: add projection head
     """
-    Computes the NT-Xent loss for a batch of images with improvements:
-      - Correct positive pairing.
-      - Masking of self-similarity in the similarity matrix.
-      - Averaging loss over image keys.
-      - Cleaner augmentation via list comprehensions.
+    Computes the NT-Xent (Normalized Temperature-scaled Cross-Entropy) loss for a batch of images.
+    Improvements:
+    - Uses SimCLR-style data augmentation with optimized transformations.
+    - Batch-wise augmentation for efficiency.
+    - Computes the similarity matrix with masking to exclude self-similarity.
+    - Uses in-place normalization for efficiency.
+    - Averages loss over image keys.
 
     Args:
-        batch (dict of torch.Tensor): Input images (or other modalities) with shape [batch_size, 3, 32, 32] for images.
-        model (torch.nn.Module): Encoder model that maps images to representations. It is assumed that model.v_type[key]
-                                 tells whether a given key corresponds to an image (e.g. sdt.IMAGE).
-        temperature (float): Temperature parameter for scaling.
+        batch (dict of torch.Tensor): Dictionary of input images [batch_size, 3, 32, 32].
+        model (torch.nn.Module): Encoder model mapping images to representations.
+        temperature (float): Scaling parameter for contrastive loss.
 
     Returns:
-        torch.Tensor: The averaged NT-Xent loss.
+        torch.Tensor: Averaged NT-Xent loss.
     """
-    import torch
-    import torch.nn.functional as F
-    import torchvision.transforms as transforms
 
     device = next(model.parameters()).device
 
     loss_total = 0
     num_image_keys = 0
 
-    # Define SimCLR augmentations.
+    # Define SimCLR Augmentations
     augmentation = transforms.Compose([
-        transforms.RandomResizedCrop(size=32, scale=(0.2, 1.0)),
-        transforms.ColorJitter(0.8, 0.8, 0.8, 0.2),
+        transforms.RandomResizedCrop(size=32, scale=(0.08, 1.0)),  # More aggressive cropping
+        transforms.RandomHorizontalFlip(p=0.5),  # Standard flipping
+        transforms.ColorJitter(0.8, 0.8, 0.8, 0.2),  # Color distortion
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3)], p=0.5),  # Gaussian blur
     ])
 
-    # Create two augmented views for each key.
-    batch_aug1 = {}
-    batch_aug2 = {}
-    for key in batch.keys():
-        imgs = batch[key]
+    # Apply augmentation to batch: generate two different augmented views
+    batch_aug1, batch_aug2 = {}, {}
+    for key, imgs in batch.items():
         if model.v_type[key] == sdt.IMAGE:
-            # Using list comprehensions for clarity.
-            batch_aug1[key] = torch.stack([augmentation(img) for img in imgs])
-            batch_aug2[key] = torch.stack([augmentation(img) for img in imgs])
+            imgs = imgs.to(device)
+            batch_aug1[key] = T.stack([augmentation(img) for img in imgs])
+            batch_aug2[key] = T.stack([augmentation(img) for img in imgs])
         else:
             batch_aug1[key] = imgs
             batch_aug2[key] = imgs
 
-    # Concatenate both views along the batch dimension.
-    batch_aug = {key: torch.cat([batch_aug1[key], batch_aug2[key]], dim=0) for key in batch.keys()}
+    # Concatenate both augmented views along the batch dimension
+    batch_aug = {key: T.cat([batch_aug1[key], batch_aug2[key]], dim=0).to(device) for key in batch.keys()}
 
-    # Forward pass through the encoder.
-    z = model.encode(batch_aug)
+    # Forward pass through the encoder model
+    z = model(batch_aug, projection=True)
 
     for key in z.keys():
         if model.v_type[key] == sdt.IMAGE:
             num_image_keys += 1
-            # Normalize the embeddings.
-            z[key] = F.normalize(z[key], dim=1)
-            batch_size = z[key].shape[0] // 2
+            batch_size = z[key].shape[0] // 2  # Since we concatenated two views
 
-            # Compute the similarity matrix.
-            sim_matrix = torch.matmul(z[key], z[key].T)  # Shape: [2*batch_size, 2*batch_size]
-            sim_matrix /= temperature
+            # Normalize embeddings in-place
+            z[key] = T.nn.functional.normalize(z[key], dim=1)
 
-            # Mask self-similarity (the diagonal) by setting it to -infinity.
-            mask = torch.eye(2 * batch_size, dtype=torch.bool, device=z[key].device)
+            # Compute cosine similarity matrix
+            sim_matrix = T.mm(z[key], z[key].T) / temperature  # Shape: [2*batch_size, 2*batch_size]
+
+            # Mask self-similarity (diagonal) by setting it to a large negative value
+            mask = T.eye(2 * batch_size, dtype=T.bool, device=z[key].device)
             sim_matrix.masked_fill_(mask, -float('inf'))
 
-            # Construct labels:
-            # For indices [0, batch_size), positive is at i+batch_size.
-            # For indices [batch_size, 2*batch_size), positive is at i-batch_size.
-            labels = torch.cat([torch.arange(batch_size, 2 * batch_size),
-                                torch.arange(0, batch_size)]).to(z[key].device)
-            
-            # Compute cross-entropy loss for this key.
-            loss_key = F.cross_entropy(sim_matrix, labels)
+            # Construct labels: each sample should be closest to its corresponding augmented version
+            labels = T.cat([T.arange(batch_size, 2 * batch_size),
+                            T.arange(0, batch_size)]).to(z[key].device)
+
+            # Compute NT-Xent loss
+            loss_key = T.nn.functional.cross_entropy(sim_matrix, labels)
             loss_total += loss_key
 
-    # Average loss over the image keys.
-    if num_image_keys > 0:
-        loss_total /= num_image_keys
-
-    return loss_total
+    # Average loss over the image keys
+    return loss_total / num_image_keys if num_image_keys > 0 else loss_total
 
 class RepresentationalPipeline(BasePipeline):
     def __init__(self, datagen, cg, v_size, v_type, hyperparams=None, repr_model_type=RepresentationalNN):
@@ -142,10 +136,17 @@ class RepresentationalPipeline(BasePipeline):
     def configure_optimizers(self):
         opt_enc = T.optim.Adam(self.model.encoders.parameters(), lr=self.lr)
         opt_dec = T.optim.Adam(self.model.decoders.parameters(), lr=self.lr)
-        if self.pred_parents:
-            opt_head = T.optim.Adam(self.model.parent_heads.parameters(), lr=self.lr)
+        opt_head = None if not self.pred_parents else T.optim.Adam(self.model.parent_heads.parameters(), lr=self.lr)
+        opt_proj = None if not self.unsup_contrastive else T.optim.Adam(self.model.proj_heads.parameters(), lr=self.lr)
+ 
+        if self.pred_parents and self.unsup_contrastive:
+            return opt_enc, opt_dec, opt_head, opt_proj
+        elif self.pred_parents:
             return opt_enc, opt_dec, opt_head
-        return opt_enc, opt_dec
+        elif self.unsup_contrastive:
+            return opt_enc, opt_dec, opt_proj
+        else:
+            return opt_enc, opt_dec
 
     def _get_loss(self, loss, out, data):
         total = 0
@@ -158,8 +159,12 @@ class RepresentationalPipeline(BasePipeline):
         if not self.train:
             warnings.warn("No component is training", UserWarning)
 
-        if self.pred_parents:
+        if self.pred_parents and self.unsup_contrastive:
+            opt_enc, opt_dec, opt_head, opt_proj = self.optimizers()
+        elif self.pred_parents:
             opt_enc, opt_dec, opt_head = self.optimizers()
+        elif self.unsup_contrastive:
+            opt_enc, opt_dec, opt_proj = self.optimizers()
         else:
             opt_enc, opt_dec = self.optimizers()
 
@@ -186,6 +191,7 @@ class RepresentationalPipeline(BasePipeline):
             loss_pred_parents_log = loss_pred_parents.item()
 
         if self.unsup_contrastive:
+            opt_proj.zero_grad()
             loss_unsup_contrastive = nt_xent_loss(batch, self.model, self.temperature)
             loss_unsup_contrastive_log = loss_unsup_contrastive.item()
 
@@ -233,6 +239,8 @@ class RepresentationalPipeline(BasePipeline):
                 opt_enc.step()
             if self.pred_parents:
                 opt_head.step()
+            if self.sup_contrastive:
+                opt_proj.step()
             if self.reconstruct or self.sup_contrastive:
                 opt_dec.step()
 
