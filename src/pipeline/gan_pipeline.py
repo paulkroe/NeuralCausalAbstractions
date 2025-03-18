@@ -186,6 +186,7 @@ class GANPipeline(BasePipeline):
 
         # Optimize Query
         max_reg = 0
+        q_loss_record = 0
         if self.optimize_query:
             reg_ratio = min(self.current_epoch, self.max_query_iters) / self.max_query_iters
             reg_up = np.log(self.max_lambda)
@@ -256,9 +257,9 @@ class GANPipeline(BasePipeline):
 
         if self.wandb:
             wandb.log({
-                None if not self. optimize_query else "Q_loss": q_loss_record,
+                "train_loss": self.stored_loss,
                 "G_loss": g_loss_record,
-                "D_loss": total_d_loss,
-                "Q_loss": None if not self.optimize_query else None
+                "D_loss": total_d_loss
+                "Q_loss": q_loss_record if self.optimize_query else None,
             })
             
