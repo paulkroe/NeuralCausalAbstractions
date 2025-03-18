@@ -257,9 +257,9 @@ class RepresentationalPipeline(BasePipeline):
 
         if self.wandb:
             wandb.log({
-                "train_loss": loss.item(),
-                "reconstruction_loss": loss_reconstruct_log if self.reconstruct else None,
-                "pred_parents_loss": loss_pred_parents_log if self.pred_parents else None,
-                "sup_contrastive_loss": loss_sup_contrastive_log if self.sup_contrastive else None,
-                "unsup_contrastive_loss": loss_unsup_contrastive_log if self.unsup_contrastive else None
+                "rep-train-loss": loss.item(),
+                "rep-reconstruction-loss": loss_reconstruct_log if self.reconstruct else None,
+                "rep-pred-parents-loss": loss_pred_parents_log if self.pred_parents else None,
+                "rep-sup-contrastive-loss": loss_sup_contrastive_log if self.sup_contrastive else None,
+                "rep-unsup-contrastive-loss": loss_unsup_contrastive_log if self.unsup_contrastive else None
             })
