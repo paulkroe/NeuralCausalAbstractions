@@ -76,7 +76,8 @@ class GANPipeline(BasePipeline):
 
     def forward(self, n=1000, u=None, do={}, evaluating=False):
         out = self.ncm(n, u, do, evaluating=evaluating)
-        print("out.device: ", out.device)
+        for key in out.keys():
+            print(f"out[{key}].device: ", out[key].device)
         print("self.device: ", self.device)
         print("repr_model.model.device_param: ", self.repr_model.model.device_param)
         print("repr_model.model.device_param: ", self.repr_model.model.device_param.device)
