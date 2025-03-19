@@ -76,6 +76,10 @@ class GANPipeline(BasePipeline):
 
     def forward(self, n=1000, u=None, do={}, evaluating=False):
         out = self.ncm(n, u, do, evaluating=evaluating)
+        print("out.device: ", out.device)
+        print("self.device: ", self.device)
+        print("repr_model.model.device_param: ", self.repr_model.model.device_param)
+        print("repr_model.model.device_param: ", self.repr_model.model.device_param.device)
         if self.repr_model is not None:
             out = self.repr_model.decode(out)
         return out
