@@ -44,6 +44,7 @@ class NCMRunner(BaseRunner):
         if gpu is not None and T.cuda.is_available():
             accelerator = "gpu"
             devices = gpu
+        print(f"Using accelerator: {accelerator} with devices: {devices}")
         
         return pl.Trainer(
             callbacks=[

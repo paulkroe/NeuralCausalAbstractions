@@ -79,8 +79,6 @@ class GANPipeline(BasePipeline):
         for key in out.keys():
             print(f"out[{key}].device: ", out[key].device)
         print("self.ncm.device: ", next(self.ncm.parameters()).device)
-        print("repr_model.model.device_param: ", self.repr_model.model.device_param)
-        print("repr_model.model.device_param: ", self.repr_model.model.device_param.device)
         if self.repr_model is not None:
             out = self.repr_model.decode(out)
         return out
