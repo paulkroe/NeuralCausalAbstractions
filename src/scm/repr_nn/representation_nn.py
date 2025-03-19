@@ -75,8 +75,6 @@ class RepresentationalNN(nn.Module):
         out = dict()
         truth = dict()
 
-        # i think this autodetects target variables?
-        # think this would not work because only animals get encoded and no parent of animals is binary or one hot
         for v in v_dict:
             if v in self.encode_v:
                 pa_list = []

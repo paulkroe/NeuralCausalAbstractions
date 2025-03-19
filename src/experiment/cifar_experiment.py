@@ -37,6 +37,6 @@ if __name__ == "__main__":
     labels = T.full((args.num_samples,), 7 - 2, dtype=T.long)
     one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6)
     data = m.forward(n=args.num_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
-    estimant = data["old"].mean(dim=0).item()
+    estimate = data["old"].mean(dim=0).item()
     
-    print(f"Estimation for P(old = 1 | do(one_hot_animal = 'horse')) with {args.num_samples} samples {estimant:.4f}")
+    print(f"Estimation for P(old = 1 | do(one_hot_animal = 'horse')) with {args.num_samples} samples {estimate:.4f}")

@@ -12,6 +12,16 @@ from .base_pipeline import BasePipeline
 import warnings
 import torchvision.transforms as transforms
 
+import numpy as np
+import os
+
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.metrics import accuracy_score
+import torch.nn.functional as F
+
 def log(x):
     return T.log(x + 1e-8)
 
@@ -263,3 +273,95 @@ class RepresentationalPipeline(BasePipeline):
                 "rep-sup-contrastive-loss": loss_sup_contrastive_log if self.sup_contrastive else None,
                 "rep-unsup-contrastive-loss": loss_unsup_contrastive_log if self.unsup_contrastive else None
             })
+
+    def on_train_epoch_end(self):
+        self.model.eval()  # Set model to evaluation mode
+
+        # Get device
+        device = next(self.model.parameters()).device
+
+        # Dictionary to store features and labels for each encoded variable
+        features_dict, labels_dict = {}, {}
+
+        # Extract embeddings using the model
+        with T.no_grad():
+            for batch in self.train_dataloader():
+                # Move batch to device
+                for key in batch:
+                    batch[key] = batch[key].to(device)
+
+                # Get encoded representations
+                enc_batch = self.model.encode(batch)
+
+                # Process each variable in self.model.encode_v
+                for v in enc_batch.keys():
+                    if v in self.model.encode_v:
+                        pa_list = []
+                        for x in self.cg.pa[v]:
+                            if self.v_type[x] == sdt.BINARY_ONES:
+                                pa_list.append(((enc_batch[x] + 1) / 2).unsqueeze(dim=1))  # Ensure shape [batch_size, 1]
+                            elif self.v_type[x] == sdt.BINARY:
+                                pa_list.append(enc_batch[x].unsqueeze(dim=1))  # Ensure shape [batch_size, 1]
+                            elif self.v_type[x] == sdt.ONE_HOT:
+                                pa_list.append(T.argmax(enc_batch[x], dim=-1, keepdim=True))  # Shape [batch_size, 1]
+
+
+                        # Store features and labels
+                        if v not in features_dict:
+                            features_dict[v] = []
+                            labels_dict[v] = []
+
+                        features_dict[v].append(enc_batch[v].cpu().numpy().astype(np.float32))
+                        labels_dict[v].append(T.cat(pa_list, dim=1).cpu().numpy().astype(np.int32))
+
+        # Train a linear probe & PCA for each component in self.model.encode_v
+        for v in self.model.encode_v:
+            if v not in features_dict or len(features_dict[v]) == 0:
+                continue  # Skip if no data
+
+            # Convert to numpy arrays
+            features = np.vstack(features_dict[v])  # Shape: [num_samples, feature_dim]
+            labels = np.vstack(labels_dict[v])      # Shape: [num_samples, label_dim]
+
+            # **Ensure labels are 1D for Logistic Regression**
+            if labels.shape[1] == 1:
+                labels = labels.ravel()  # Convert to (n_samples,)
+
+            # **Standardize Features**
+            scaler = StandardScaler()
+            features = scaler.fit_transform(features)
+
+            # **Step 1: Train a Linear Probe**
+            clf = LogisticRegression(max_iter=100, solver="saga", multi_class="auto")
+            clf.fit(features, labels)
+            pred_labels = clf.predict(features)
+            linear_probe_acc = accuracy_score(labels, pred_labels)
+
+            # **Step 2: Perform PCA for Visualization**
+            pca = PCA(n_components=2)
+            pca_features = pca.fit_transform(features)  # Reduce from high-dimensional to 2D
+
+            # **Step 3: Plot PCA visualization**
+            plt.figure(figsize=(8, 6))
+            scatter = plt.scatter(pca_features[:, 0], pca_features[:, 1], c=labels, cmap="jet", alpha=0.5)
+            plt.colorbar(scatter, label="Class Label")
+            plt.title(f"PCA Visualization ({v}) - Epoch {self.current_epoch}")
+            plt.xlabel("PCA Component 1")
+            plt.ylabel("PCA Component 2")
+
+            # Save figure
+            pca_plot_path = f"pca_{v}_epoch_{self.current_epoch}.png"
+            plt.savefig(pca_plot_path)
+            plt.close()
+
+            # **Step 4: Log to Weights & Biases**
+            if self.wandb:
+                wandb.log({
+                    f"rep-{v}/linear_probe_acc": linear_probe_acc
+                })
+                # Log PCA visualization for each component
+                wandb.log({f"rep-{v}/PCA Visualization": wandb.Image(pca_plot_path)})
+            # Remove the saved plot
+            os.remove(pca_plot_path)
+
+        self.model.train()  # Switch back to training mode

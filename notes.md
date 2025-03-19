@@ -2,6 +2,7 @@
 TODO:
 what are the args in the generator class doing?
 don't really understand how repr works in minmax_ncm_runner
+how is repr integrated in scm
 
 # **Wednesday, 2/26 – Meeting Notes**
 
