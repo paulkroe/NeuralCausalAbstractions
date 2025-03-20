@@ -78,6 +78,9 @@ class GANPipeline(BasePipeline):
         out = self.ncm(n, u, do, evaluating=evaluating)
         for v in out.values():
             v.to(device=next(self.repr_model.decoders.parameters()).device)
+        for v in out.values():
+            print("tensor device ", v.device)
+        print("model device: ", next(self.repr_model.decoders.parameters()).device)
         if self.repr_model is not None:
             out = self.repr_model.decode(out)
         return out
