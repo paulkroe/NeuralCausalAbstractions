@@ -76,9 +76,8 @@ class GANPipeline(BasePipeline):
 
     def forward(self, n=1000, u=None, do={}, evaluating=False):
         out = self.ncm(n, u, do, evaluating=evaluating)
-        for key in out.keys():
-            print(f"out[{key}].device: ", out[key].device)
-        print("self.ncm.device: ", next(self.ncm.parameters()).device)
+        for v in out.values():
+            v.to(device=next(self.repr_model.parameters()).device)
         if self.repr_model is not None:
             out = self.repr_model.decode(out)
         return out
@@ -267,9 +266,9 @@ class GANPipeline(BasePipeline):
             })
     
     def on_train_epoch_end(self):
-        labels = T.full((100,), 7 - 2, dtype=T.long).to(device=self.device)
+        labels = T.full((10,), 7 - 2, dtype=T.long).to(device=self.device)
         one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
-        data = self.forward(n=100, do={"one_hot_animal": one_hot_lables}, evaluating=True)
+        data = self.forward(n=10, do={"one_hot_animal": one_hot_lables}, evaluating=True)
         ground_truth = 0.1736
         estimate = data["old"].mean(dim=0).item()
         error = np.absolute(ground_truth - estimate)

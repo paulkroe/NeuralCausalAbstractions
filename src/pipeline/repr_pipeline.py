@@ -46,7 +46,6 @@ def nt_xent_loss(batch, model, temperature=0.1):
     """
 
     device = next(model.parameters()).device
-    print("repr device: ", device)
 
     loss_total = 0
     num_image_keys = 0
