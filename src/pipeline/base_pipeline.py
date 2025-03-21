@@ -18,4 +18,4 @@ class BasePipeline(pl.LightningModule):
         return self.ncm(n, u, do)
 
     def train_dataloader(self):
-        return DataLoader(self.datagen, batch_size=self.batch_size, shuffle=True, drop_last=True, num_workers=4) # probaly want to make num workers a hyperparam
+        return DataLoader(self.datagen, batch_size=self.batch_size, shuffle=True, drop_last=True, num_workers=4) # TODO: probaly want to make num workers a hyperparam

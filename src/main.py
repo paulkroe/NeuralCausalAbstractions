@@ -121,6 +121,7 @@ parser.add_argument('--max-lambda', type=float, default=1e-2, help="maximum lamb
 parser.add_argument('--min-lambda', type=float, default=1e-4, help="minimum lambda value for ID loss")
 parser.add_argument('--custom-query', action="store_true", help="use a custom query aside from image")
 parser.add_argument('--use-tau', action="store_true", help="use existing tau")
+parser.add_argument('--eval-samples', type=int, default=1000, help="number of samples to evaluate representation")
 
 # Experiment parameters
 parser.add_argument('--no-normalize', action="store_true", help="turn off dataset normalizing")
@@ -221,6 +222,7 @@ hyperparams = {
     'max-lambda': args.max_lambda,
     'min-lambda': args.min_lambda,
     'use-tau': args.use_tau,
+    'eval-samples': args.eval_samples,
     'img-query': not args.custom_query,
     'verbose': args.verbose,
     'wandb': args.wandb,

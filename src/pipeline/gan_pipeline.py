@@ -61,6 +61,8 @@ class GANPipeline(BasePipeline):
         self.min_lambda = hyperparams.get('min-lambda', 0.001)
         self.max_lambda = hyperparams.get('max-lambda', 1.0)
 
+        self.eval_samples = hyperparams.get('eval-samples', 1000)
+
         #self.dat_prob_table = self.datagen.get_prob_table()
         self.logged = False
         self.stored_loss = 1e8
@@ -266,9 +268,9 @@ class GANPipeline(BasePipeline):
             })
     
     def on_train_epoch_end(self):
-        labels = T.full((500,), 7 - 2, dtype=T.long).to(device=self.device)
+        labels = T.full((self.eval_samples,), 7 - 2, dtype=T.long).to(device=self.device)
         one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
-        data = self.forward(n=500, do={"one_hot_animal": one_hot_lables}, evaluating=True)
+        data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
         ground_truth = 0.1736
         estimate = data["old"].mean(dim=0).item()
         error = np.absolute(ground_truth - estimate)
