@@ -27,80 +27,6 @@ import torch.nn.functional as F
 def log(x):
     return T.log(x + 1e-8)
 
-def nt_xent_loss(batch, model, temperature=0.07):
-    """
-    Computes the NT-Xent (Normalized Temperature-scaled Cross-Entropy) loss for a batch of images.
-    Improvements:
-    - Uses SimCLR-style data augmentation with optimized transformations.
-    - Batch-wise augmentation for efficiency.
-    - Computes the similarity matrix with masking to exclude self-similarity.
-    - Uses in-place normalization for efficiency.
-    - Averages loss over image keys.
-
-    Args:
-        batch (dict of torch.Tensor): Dictionary of input images [batch_size, 3, 32, 32].
-        model (torch.nn.Module): Encoder model mapping images to representations.
-        temperature (float): Scaling parameter for contrastive loss.
-
-    Returns:
-        torch.Tensor: Averaged NT-Xent loss.
-    """
-
-    device = next(model.parameters()).device
-
-    loss_total = 0
-    num_image_keys = 0
-
-    # Define SimCLR Augmentations
-    augmentation = transforms.Compose([
-        transforms.RandomResizedCrop(size=32, scale=(0.08, 1.0)),  # More aggressive cropping
-        transforms.RandomHorizontalFlip(p=0.5),  # Standard flipping
-        transforms.ColorJitter(0.8, 0.8, 0.8, 0.2),  # Color distortion
-        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3)], p=0.5),  # Gaussian blur
-    ])
-
-    # Apply augmentation to batch: generate two different augmented views
-    batch_aug1, batch_aug2 = {}, {}
-    for key, imgs in batch.items():
-        if model.v_type[key] == sdt.IMAGE:
-            imgs = imgs.to(device)
-            batch_aug1[key] = T.stack([augmentation(img) for img in imgs])
-            batch_aug2[key] = T.stack([augmentation(img) for img in imgs])
-        else:
-            batch_aug1[key] = imgs
-            batch_aug2[key] = imgs
-
-    # Concatenate both augmented views along the batch dimension
-    batch_aug = {key: T.cat([batch_aug1[key], batch_aug2[key]], dim=0).to(device) for key in batch.keys()}
-
-    # Forward pass through the encoder model
-    z = model(batch_aug, projection=True)
-
-    for key in z.keys():
-        if model.v_type[key] == sdt.IMAGE:
-            num_image_keys += 1
-            batch_size = z[key].shape[0] // 2  # Since we concatenated two views
-
-            # Normalize embeddings in-place
-            z[key] = T.nn.functional.normalize(z[key], dim=1)
-
-            # Compute cosine similarity matrix
-            sim_matrix = T.mm(z[key], z[key].T) / temperature  # Shape: [2*batch_size, 2*batch_size]
-
-            # Mask self-similarity (diagonal) by setting it to a large negative value
-            mask = T.eye(2 * batch_size, dtype=T.bool, device=z[key].device)
-            sim_matrix.masked_fill_(mask, -float('inf'))
-
-            # Construct labels: each sample should be closest to its corresponding augmented version
-            labels = T.cat([T.arange(batch_size, 2 * batch_size),
-                            T.arange(0, batch_size)]).to(z[key].device)
-
-            # Compute NT-Xent loss
-            loss_key = T.nn.functional.cross_entropy(sim_matrix, labels)
-            loss_total += loss_key
-
-    # Average loss over the image keys
-    return loss_total / num_image_keys if num_image_keys > 0 else loss_total
 
 class SupConLoss(nn.Module):
     """
@@ -372,15 +298,15 @@ class RepresentationalPipeline(BasePipeline):
                 opt_dec.step()
 
         # logging
-        self.log('train_loss', loss.item(), prog_bar=True)
+        self.log('train_loss', loss.item(), prog_bar=True, on_step=True, on_epoch=False)
         if self.reconstruct:
-            self.log('reconstruction_loss', loss_reconstruct_log, prog_bar=True)
+            self.log('reconstruction_loss', loss_reconstruct_log, prog_bar=True, on_step=True, on_epoch=False)
         if self.pred_parents:
-            self.log('pred_parents_loss', loss_pred_parents_log, prog_bar=True)
+            self.log('pred_parents_loss', loss_pred_parents_log, prog_bar=True, on_step=True, on_epoch=False)
         if self.sup_contrastive:
-            self.log('sup_contrastive_loss', loss_sup_contrastive_log, prog_bar=True)
+            self.log('sup_contrastive_loss', loss_sup_contrastive_log, prog_bar=True, on_step=True, on_epoch=False)
         if self.unsup_contrastive:
-            self.log('unsup_contrastive_loss', loss_unsup_contrastive_log, prog_bar=True)
+            self.log('unsup_contrastive_loss', loss_unsup_contrastive_log, prog_bar=True, on_step=True, on_epoch=False)
 
         if self.wandb:
             wandb.log({
