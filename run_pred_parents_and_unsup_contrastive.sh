@@ -21,4 +21,5 @@ python -m src.main CIFAR sampling cifar gan \
     --wandb \
     --wandb-project-name NeuralCausalAbstractions \
     --wandb-org-name paulkroe \
-    --rep-unsup-contrastive
+    --rep-unsup-contrastive \
+    --rep-pred-parents
