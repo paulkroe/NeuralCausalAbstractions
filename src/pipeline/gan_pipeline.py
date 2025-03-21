@@ -266,9 +266,9 @@ class GANPipeline(BasePipeline):
             })
     
     def on_train_epoch_end(self):
-        labels = T.full((250,), 7 - 2, dtype=T.long).to(device=self.device)
+        labels = T.full((500,), 7 - 2, dtype=T.long).to(device=self.device)
         one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
-        data = self.forward(n=250, do={"one_hot_animal": one_hot_lables}, evaluating=True)
+        data = self.forward(n=500, do={"one_hot_animal": one_hot_lables}, evaluating=True)
         ground_truth = 0.1736
         estimate = data["old"].mean(dim=0).item()
         error = np.absolute(ground_truth - estimate)

@@ -49,7 +49,7 @@ class RepresentationalNN(nn.Module):
             })
 
         self.proj_heads = None
-        if hyperparams["rep-unsup-contrastive"]:
+        if hyperparams["rep-unsup-contrastive"] or hyperparams["rep-sup-contrastive"]:
             self.proj_heads = nn.ModuleDict({
                 v: nn.Sequential(nn.Linear(hyperparams['rep-size'], hyperparams['rep-size']),
                                  nn.ReLU(),
