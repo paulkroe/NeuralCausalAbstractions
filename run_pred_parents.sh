@@ -18,6 +18,7 @@ python -m src.main CIFAR sampling cifar gan \
     --rep-max-epochs 25 \
     --rep-patience 25 \
     --gpu 0 \
+    --eval-samples 50 \
     --wandb \
     --wandb-project-name NeuralCausalAbstractions \
     --wandb-org-name paulkroe \
