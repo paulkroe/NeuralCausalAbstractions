@@ -189,9 +189,6 @@ class SupConLoss(nn.Module):
         # Compute mean log-likelihood over positive pairs.
         mean_log_prob_pos = (mask * log_prob).sum(1) / (mask.sum(1) + 1e-12)
 
-        print(mean_log_prob_pos)
-        assert 0
-
         # Loss is the negative of the weighted log-likelihood.
         loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
         loss = loss.mean()
@@ -244,13 +241,13 @@ class RepresentationalPipeline(BasePipeline):
         opt_enc = T.optim.Adam(self.model.encoders.parameters(), lr=self.lr)
         opt_dec = T.optim.Adam(self.model.decoders.parameters(), lr=self.lr)
         opt_head = None if not self.pred_parents else T.optim.Adam(self.model.parent_heads.parameters(), lr=self.lr)
-        opt_proj = None if not self.unsup_contrastive else T.optim.Adam(self.model.proj_heads.parameters(), lr=self.lr)
+        opt_proj = None if not (self.unsup_contrastive or self.sup_contrastive) else T.optim.Adam(self.model.proj_heads.parameters(), lr=self.lr)
  
         if self.pred_parents and self.unsup_contrastive:
             return opt_enc, opt_dec, opt_head, opt_proj
         elif self.pred_parents:
             return opt_enc, opt_dec, opt_head
-        elif self.unsup_contrastive:
+        elif self.unsup_contrastive or self.sup_contrastive:
             return opt_enc, opt_dec, opt_proj
         else:
             return opt_enc, opt_dec
@@ -270,7 +267,7 @@ class RepresentationalPipeline(BasePipeline):
             opt_enc, opt_dec, opt_head, opt_proj = self.optimizers()
         elif self.pred_parents:
             opt_enc, opt_dec, opt_head = self.optimizers()
-        elif self.unsup_contrastive:
+        elif self.unsup_contrastive or self.sup_contrastive:
             opt_enc, opt_dec, opt_proj = self.optimizers()
         else:
             opt_enc, opt_dec = self.optimizers()
