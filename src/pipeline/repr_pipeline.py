@@ -245,6 +245,8 @@ class RepresentationalPipeline(BasePipeline):
  
         if self.pred_parents and self.unsup_contrastive:
             return opt_enc, opt_dec, opt_head, opt_proj
+        elif self.pred_parents and self.sup_contrastive:
+            return opt_enc, opt_dec, opt_head, opt_proj
         elif self.pred_parents:
             return opt_enc, opt_dec, opt_head
         elif self.unsup_contrastive or self.sup_contrastive:
@@ -264,6 +266,8 @@ class RepresentationalPipeline(BasePipeline):
             warnings.warn("No component is training", UserWarning)
 
         if self.pred_parents and self.unsup_contrastive:
+            opt_enc, opt_dec, opt_head, opt_proj = self.optimizers()
+        if self.pred_parents and self.sup_contrastive:
             opt_enc, opt_dec, opt_head, opt_proj = self.optimizers()
         elif self.pred_parents:
             opt_enc, opt_dec, opt_head = self.optimizers()
