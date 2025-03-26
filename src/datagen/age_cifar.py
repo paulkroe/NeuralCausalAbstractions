@@ -1,7 +1,9 @@
 import numpy as np
+import random
 import torch as T
 import torchvision
 from torchvision import transforms
+import torchvision.transforms.functional as TF
 from torch.utils.data import DataLoader, Subset
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -12,10 +14,28 @@ from src.scm.scm import check_equal
 from src.ds import CTF, CTFTerm
 from src.metric.visualization import show_image_grid
 
-
 def expand_do(val, n):
     return np.ones(n, dtype=int) * val
 
+class RandomRotateCropResize:
+    def __init__(self, crop_size, output_size):
+        self.crop_size = crop_size
+        self.output_size = output_size
+
+    def __call__(self, x):
+        # Random rotation: choose from 0°, 90°, 180°, 270°
+        angle = random.choice([0, 90, 180, 270])
+        x = TF.rotate(x, angle)
+
+        # Random crop (center crop if image is too small)
+        _, h, w = x.shape
+        top = random.randint(0, max(0, h - self.crop_size))
+        left = random.randint(0, max(0, w - self.crop_size))
+        x = TF.crop(x, top, left, self.crop_size, self.crop_size)
+
+        # Resize back to original size
+        x = TF.resize(x, (h, w))
+        return x
 
 class AgeCifarDataGenerator(SCMDataGenerator):
     def __init__(self, image_size, mode, evaluating=False):
@@ -25,7 +45,7 @@ class AgeCifarDataGenerator(SCMDataGenerator):
         # that is: it samples an animal and then an age for that animal
         # we assume age is distributed uniformly
         self.n_classes = 6
-        
+        self.transform = RandomRotateCropResize(crop_size=128, output_size=256)  # example sizes
         # life expectancy of each animal normalized to 1
         self.life_expectancy = {
             "bird": 3,
@@ -124,7 +144,7 @@ class AgeCifarDataGenerator(SCMDataGenerator):
         animal_idx = animal[:]
         for i in range(n):
             sample_idx = np.random.randint(0, len(self.train_animal_dict[animal_idx[i]]))
-            animal[i] = self.train_animal_dict[animal_idx[i]][sample_idx, :]
+            animal[i] = self.transform(self.train_animal_dict[animal_idx[i]][sample_idx, :])
 
         one_hot_animal = T.zeros((n, self.n_classes))
         one_hot_animal[T.arange(n), [i - 2 for i in animal_idx]] = 1 # subtract 2 since original indices are 2-7
