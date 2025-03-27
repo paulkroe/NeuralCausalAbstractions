@@ -330,7 +330,7 @@ class RepresentationalPipeline(BasePipeline):
             loss_reconstruct = self._get_loss(self.loss, out_batch, batch)
             loss_reconstruct_log = loss_reconstruct.item()
 
-        loss = loss_reconstruct + loss_pred_parents + loss_unsup_contrastive + 0.8 * loss_sup_contrastive
+        loss = loss_reconstruct + loss_pred_parents + loss_unsup_contrastive + 0.2 * loss_sup_contrastive
         
         self.manual_backward(loss)
 
