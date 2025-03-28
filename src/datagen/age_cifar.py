@@ -151,7 +151,7 @@ class AgeCifarDataGenerator(SCMDataGenerator):
 
         old = []
         for i in range(n):
-            old.append(1 if age[i] > self.life_expectancy[self.indices_animal_classes[animal_idx[i]]] / 2 else 0)       
+            old.append(1 if age[i] > self.life_expectancy[self.indices_animal_classes[animal_idx[i]]] / 2 else -1)       
  
         data = {
             'one_hot_animal': one_hot_animal.float(),
