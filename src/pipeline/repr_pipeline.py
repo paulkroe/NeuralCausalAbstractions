@@ -296,7 +296,8 @@ class RepresentationalPipeline(BasePipeline):
         self.temperature = hyperparams["rep-temperature"]
         self.wandb = hyperparams["wandb"]
         self.loss = nn.MSELoss()
-        self.classify_loss = nn.BCELoss()
+        # self.classify_loss = nn.BCELoss()
+        self.classify_loss = nn.CrossEntropyLoss()
         self.con_loss = SupConLoss(temperature=self.temperature)
 
         if hyperparams["verbose"]:
