@@ -194,6 +194,76 @@ class SupConLoss(nn.Module):
         loss = loss.mean()
         return loss
 
+
+
+def supervised_contrastive_loss(embeddings, labels, temperature=0.07):
+    """
+    Compute the supervised contrastive loss.
+
+    Args:
+        embeddings (Tensor): shape [N, D] where N is number of samples and D is feature dim.
+        labels (Tensor): shape [N] ground truth labels.
+        temperature (float): scaling factor for the cosine similarities.
+
+    Returns:
+        loss (Tensor): scalar loss.
+    """
+    # Normalize embeddings to unit vectors.
+    embeddings = F.normalize(embeddings, p=2, dim=1)
+    
+    # Compute pairwise cosine similarity scaled by temperature.
+    similarity_matrix = T.matmul(embeddings, embeddings.T) / temperature
+    
+    # Create a mask to remove self-similarity (diagonal elements).
+    diag_mask = T.eye(similarity_matrix.size(0), device=embeddings.device, dtype=T.bool)
+    similarity_matrix.masked_fill_(diag_mask, -1e9)
+    
+    # Compute log probabilities.
+    exp_sim = T.exp(similarity_matrix)
+    log_prob = similarity_matrix - T.log(exp_sim.sum(dim=1, keepdim=True))
+    
+    # Build a mask for positives: samples with the same label.
+    labels = labels.unsqueeze(1)  # Shape: [N, 1]
+    positive_mask = T.eq(labels, labels.T).float()
+    positive_mask.masked_fill_(diag_mask, 0)
+    
+    # Compute the loss for each sample and take the mean.
+    loss = -(positive_mask * log_prob).sum(dim=1) / (positive_mask.sum(dim=1) + 1e-8)
+    return loss.mean()
+
+def compute_contrastive_loss(label_out, label_truth, temperature=0.07):
+    """
+    Separates predictions into correct and wrong sets.
+    For wrong predictions, computes the supervised contrastive loss.
+
+    Args:
+        label_out (Tensor): Tensor of shape [batch_size, num_classes] with logits or features.
+        label_truth (Tensor): Tensor of shape [batch_size] with ground-truth labels.
+        temperature (float): Temperature hyperparameter for the loss.
+
+    Returns:
+        contrastive_loss (Tensor or None): Loss computed on wrong predictions; None if there are none.
+        correct_indices (Tensor): 1D tensor with indices of correct predictions.
+        wrong_indices (Tensor): 1D tensor with indices of mispredictions.
+    """
+    # Compute predicted classes.
+    preds = label_out.argmax(dim=1)
+    correct_mask = preds.eq(label_truth)
+    wrong_mask = ~correct_mask
+
+    # Get indices for correct and wrong predictions.
+    correct_indices = correct_mask.nonzero(as_tuple=True)[0]
+    wrong_indices = wrong_mask.nonzero(as_tuple=True)[0]
+
+    contrastive_loss = 0
+    if wrong_indices.numel() > 0:
+        # Select only the mispredicted samples.
+        wrong_embeddings = label_out[wrong_indices]  # Shape: [n_wrong, D]
+        wrong_labels = label_truth[wrong_indices]      # Shape: [n_wrong]
+        contrastive_loss = supervised_contrastive_loss(wrong_embeddings, wrong_labels, temperature)
+        
+    return contrastive_loss
+
 class RepresentationalPipeline(BasePipeline):
     def __init__(self, datagen, cg, v_size, v_type, hyperparams=None, repr_model_type=RepresentationalNN):
         if hyperparams is None:
@@ -281,6 +351,7 @@ class RepresentationalPipeline(BasePipeline):
 
         loss_pred_parents = 0
         loss_pred_parents_log = 0
+        loss_pred_parents_contrast_log = 0
         loss_unsup_contrastive = 0
         loss_unsup_contrastive_log = 0
         loss_sup_contrastive = 0
@@ -293,8 +364,16 @@ class RepresentationalPipeline(BasePipeline):
         if self.pred_parents:
             opt_head.zero_grad()
             out_batch, label_out, label_truth = self.model(batch, classify=True)
+
             loss_pred_parents = self.classify_lambda * self._get_loss(self.classify_loss, label_out, label_truth)
             loss_pred_parents_log = loss_pred_parents.item()
+
+            for k in label_out.keys():
+                # TODO: need to fix this 
+                label_truth[k] = T.argmax(label_truth[k], dim=-1)
+                loss_contrastive = compute_contrastive_loss(label_out[k], label_truth[k], self.temperature)
+                loss_pred_parents_contrast_log += loss_contrastive.item()
+                loss_pred_parents += loss_contrastive
 
         if self.unsup_contrastive:
             opt_proj.zero_grad()
@@ -360,6 +439,7 @@ class RepresentationalPipeline(BasePipeline):
                 "rep-train-loss": loss.item(),
                 "rep-reconstruction-loss": loss_reconstruct_log if self.reconstruct else None,
                 "rep-pred-parents-loss": loss_pred_parents_log if self.pred_parents else None,
+                "rep-pred-parents-contrast-loss": loss_pred_parents_contrast_log if self.pred_parents else None,
                 "rep-sup-contrastive-loss": loss_sup_contrastive_log if self.sup_contrastive else None,
                 "rep-unsup-contrastive-loss": loss_unsup_contrastive_log if self.unsup_contrastive else None
             })
