@@ -266,13 +266,14 @@ class GANPipeline(BasePipeline):
                 "D-loss": total_d_loss,
                 "Q-loss": q_loss_record if self.optimize_query else None
             })
-    
+
+    @T.no_grad()
     def on_train_epoch_end(self):
         labels = T.full((self.eval_samples,), 7 - 2, dtype=T.long).to(device=self.device)
         one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
         data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
         ground_truth = 0.1736
-        estimate = data["old"].mean(dim=0).item()
+        estimate = T.nn.functional.relu(data["old"]).mean(dim=0).item()
         error = np.absolute(ground_truth - estimate)
 
         self.log("estimate", estimate)
