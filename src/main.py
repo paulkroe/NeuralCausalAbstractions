@@ -91,7 +91,7 @@ parser.add_argument('--rep-reconstruct', action="store_true", help="use reconstr
 parser.add_argument('--rep-unsup-contrastive', action="store_true", help="use unsupervised contrastive loss when learning representations")
 parser.add_argument('--rep-sup-contrastive', action="store_true", help="use supervised contrastive loss when learning representations")
 parser.add_argument('--rep-pred-parents', action="store_true", help="use loss from predicting parents when training representations")
-
+parser.add_argument('--rep-pred-parents-contr', action="store_true", help="enable contrastive component for predicting parents")
 
 # Hyper-parameters for GAN-NCM
 parser.add_argument('--gan-mode', default="vanilla", help="GAN loss function (default: vanilla)")
@@ -215,6 +215,7 @@ hyperparams = {
     'rep-unsup-contrastive': args.rep_unsup_contrastive,
     'rep-sup-contrastive': args.rep_sup_contrastive,
     'rep-pred-parents': args.rep_pred_parents,
+    'rep-pred-parents-contr': args.rep_pred_parents_contr,
     'rep-train': args.rep_reconstruct or args.rep_unsup_contrastive or args.rep_sup_contrastive or args.rep_pred_parents,
     'identify': args.mode == "identify",
     'normalize': not args.no_normalize,

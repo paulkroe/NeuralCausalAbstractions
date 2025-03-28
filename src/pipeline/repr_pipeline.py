@@ -287,6 +287,7 @@ class RepresentationalPipeline(BasePipeline):
         self.lr = hyperparams["rep-lr"]
         self.train = hyperparams["rep-train"]
         self.pred_parents = hyperparams['rep-pred-parents']
+        self.pred_parents_contrast = hyperparams['rep-pred-parents-contr']
         self.reconstruct = hyperparams['rep-reconstruct']
         self.unsup_contrastive = hyperparams['rep-unsup-contrastive']
         self.sup_contrastive = hyperparams['rep-sup-contrastive']
@@ -399,10 +400,10 @@ class RepresentationalPipeline(BasePipeline):
 
                     features[v] = enc_batch[v]
                     labels[v] = T.cat(pa_list, dim=1)
-            
-            for k in features.keys():
-                loss_sup_contrastive += self.con_loss(features[k], labels[k])
-                loss_sup_contrastive_log = loss_sup_contrastive.item()
+            if self.pred_parents_contrast:
+                for k in features.keys():
+                    loss_sup_contrastive += self.con_loss(features[k], labels[k])
+                    loss_sup_contrastive_log = loss_sup_contrastive.item()
 
         if self.reconstruct:
             out_batch = self.model(batch)
@@ -429,6 +430,8 @@ class RepresentationalPipeline(BasePipeline):
             self.log('reconstruction_loss', loss_reconstruct_log, prog_bar=True, on_step=True, on_epoch=False)
         if self.pred_parents:
             self.log('pred_parents_loss', loss_pred_parents_log, prog_bar=True, on_step=True, on_epoch=False)
+        if self.pred_parents_contrast:
+            self.log('pred_parents_contrast_loss', loss_pred_parents_contrast_log, prog_bar=True, on_step=True, on_epoch=False)
         if self.sup_contrastive:
             self.log('sup_contrastive_loss', loss_sup_contrastive_log, prog_bar=True, on_step=True, on_epoch=False)
         if self.unsup_contrastive:
@@ -439,7 +442,7 @@ class RepresentationalPipeline(BasePipeline):
                 "rep-train-loss": loss.item(),
                 "rep-reconstruction-loss": loss_reconstruct_log if self.reconstruct else None,
                 "rep-pred-parents-loss": loss_pred_parents_log if self.pred_parents else None,
-                "rep-pred-parents-contrast-loss": loss_pred_parents_contrast_log if self.pred_parents else None,
+                "rep-pred-parents-contrast-loss": loss_pred_parents_contrast_log if self.pred_parents_contrast else None,
                 "rep-sup-contrastive-loss": loss_sup_contrastive_log if self.sup_contrastive else None,
                 "rep-unsup-contrastive-loss": loss_unsup_contrastive_log if self.unsup_contrastive else None
             })
