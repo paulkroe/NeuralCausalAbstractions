@@ -369,12 +369,14 @@ class RepresentationalPipeline(BasePipeline):
             loss_pred_parents = self.classify_lambda * self._get_loss(self.classify_loss, label_out, label_truth)
             loss_pred_parents_log = loss_pred_parents.item()
 
-            for k in label_out.keys():
-                # TODO: need to fix this 
-                label_truth[k] = T.argmax(label_truth[k], dim=-1)
-                loss_contrastive = compute_contrastive_loss(label_out[k], label_truth[k], self.temperature)
-                loss_pred_parents_contrast_log += loss_contrastive.item()
-                loss_pred_parents += loss_contrastive
+            if self.pred_parents_contrast:
+
+                for k in label_out.keys():
+                    # TODO: need to fix this manual argmax, might be unnecessary in some cases
+                    label_truth[k] = T.argmax(label_truth[k], dim=-1)
+                    loss_contrastive = compute_contrastive_loss(label_out[k], label_truth[k], self.temperature)
+                    loss_pred_parents_contrast_log += loss_contrastive.item()
+                    loss_pred_parents += loss_contrastive
 
         if self.unsup_contrastive:
             opt_proj.zero_grad()
@@ -400,10 +402,10 @@ class RepresentationalPipeline(BasePipeline):
 
                     features[v] = enc_batch[v]
                     labels[v] = T.cat(pa_list, dim=1)
-            if self.pred_parents_contrast:
-                for k in features.keys():
-                    loss_sup_contrastive += self.con_loss(features[k], labels[k])
-                    loss_sup_contrastive_log = loss_sup_contrastive.item()
+            
+            for k in features.keys():
+                loss_sup_contrastive += self.con_loss(features[k], labels[k])
+                loss_sup_contrastive_log = loss_sup_contrastive.item()
 
         if self.reconstruct:
             out_batch = self.model(batch)
