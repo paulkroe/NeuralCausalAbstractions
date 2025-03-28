@@ -273,7 +273,7 @@ class GANPipeline(BasePipeline):
         one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
         data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
         ground_truth = 0.1736
-        estimate = T.nn.functional.relu(data["old"]).mean(dim=0).item()
+        estimate = (data["old"] > 0).float().mean(dim=0).item()
         error = np.absolute(ground_truth - estimate)
 
         self.log("estimate", estimate)
