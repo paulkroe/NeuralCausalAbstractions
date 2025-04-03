@@ -273,7 +273,9 @@ class GANPipeline(BasePipeline):
         labels = T.full((self.eval_samples,), 7 - 2, dtype=T.long).to(device=self.device) # set animal to 'horse'
         one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
         data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
-        print(data["age"])
+        age = T.full((self.eval_samples,), 17, dtype=T.float).to(device=self.device)
+        print(data["age"].shape)
+        print(age.shape)
         assert 0
         ground_truth = 0.1736
         estimate = (data["old"] > 0).float().mean(dim=0).item()
