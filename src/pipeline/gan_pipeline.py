@@ -315,6 +315,6 @@ class GANPipeline(BasePipeline):
 
         if self.wandb:
             wandb.log({
-                "do-'frog'-estiamte": estimate,
-                "do-'frog'-error": error
+                "do-'deer'-estiamte": estimate,
+                "do-'deer'-error": error
             })
