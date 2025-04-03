@@ -261,6 +261,7 @@ class GANPipeline(BasePipeline):
 
         if self.wandb:
             wandb.log({
+                "train-epoch": self.current_epoch,
                 "train-loss": self.stored_loss,
                 "G-loss": g_loss_record,
                 "D-loss": total_d_loss,

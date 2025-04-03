@@ -442,6 +442,7 @@ class RepresentationalPipeline(BasePipeline):
 
         if self.wandb:
             wandb.log({
+                "rep-train-epoch": self.current_epoch,
                 "rep-train-loss": loss.item(),
                 "rep-reconstruction-loss": loss_reconstruct_log if self.reconstruct else None,
                 "rep-pred-parents-loss": loss_pred_parents_log if self.pred_parents else None,
