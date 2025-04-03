@@ -1,8 +1,11 @@
-# GROUND TRUTH
+# GROUND TRUTHS
 # Compute P(old = 1 | do(one_hot_animal = 'horse'))
 # P(old = 1 | do(one_hot_animal = 'horse')) 
 # = 1/6 * (7.5/20 + 2.5/15 + 12.5/25) = 0.1736
 
+# Compute P(old = 1 | do(one_hot_animal = 'frog'))
+# P(old = 1 | do(one_hot_animal = 'frog')) 
+# = 1/6 * (19.5/20 + 24.5/25 + 0.5/1 + 8.5/9 + 14.5/15 + 2.5/3) = 0.9074
 import os
 import argparse
 import torch as T

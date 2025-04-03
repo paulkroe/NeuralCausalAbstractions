@@ -106,16 +106,6 @@ class AgeCifarDataGenerator(SCMDataGenerator):
         }
         self.cg = "age_cifar"
 
-        # assumed weights in lbs for each animal
-        self.average_weights = {
-            self.animal_class_indices['bird']: 2,
-            self.animal_class_indices['cat']: 10,
-            self.animal_class_indices['dog']: 50,
-            self.animal_class_indices['deer']: 400,
-            self.animal_class_indices['frog']: 0.5,
-            self.animal_class_indices['horse']: 1000
-        }
-
         self.group_A = [self.animal_class_indices[animal] for animal in ["cat", "dog", "horse"]]
         self.group_B = [self.animal_class_indices[animal] for animal in ["bird", "deer", "frog"]]
 

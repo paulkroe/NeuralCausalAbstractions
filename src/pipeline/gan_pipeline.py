@@ -270,18 +270,51 @@ class GANPipeline(BasePipeline):
 
     @T.no_grad()
     def on_train_epoch_end(self):
-        labels = T.full((self.eval_samples,), 7 - 2, dtype=T.long).to(device=self.device)
+        labels = T.full((self.eval_samples,), 7 - 2, dtype=T.long).to(device=self.device) # set animal to 'horse'
         one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
         data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
         ground_truth = 0.1736
         estimate = (data["old"] > 0).float().mean(dim=0).item()
         error = np.absolute(ground_truth - estimate)
 
-        self.log("estimate", estimate)
-        self.log("error", error)
+        self.log("do-'horse'-estimate", estimate)
+        self.log("do-'horse'-error", error)
 
         if self.wandb:
             wandb.log({
-                "estiamte": estimate,
-                "error": error
+                "do-'horse'-estiamte": estimate,
+                "do-'horse'-error": error
+            })
+
+        labels = T.full((self.eval_samples,), 7 - 3, dtype=T.long).to(device=self.device) # set animal to 'frog'
+        one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
+        data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
+        ground_truth = 0.9074 
+        estimate = (data["old"] > 0).float().mean(dim=0).item()
+        error = np.absolute(ground_truth - estimate)
+
+        self.log("do-'frog'-estimate", estimate)
+        self.log("do-'frog'-error", error)
+
+        if self.wandb:
+            wandb.log({
+                "do-'frog'-estiamte": estimate,
+                "do-'frog'-error": error
+            })
+
+        labels = T.full((self.eval_samples,), 7 - 5, dtype=T.long).to(device=self.device) # set animal to 'frog'
+        one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
+        age = T.full((self.eval_samples,), 17, dtype=T.float).to(device=self.device)
+        data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables, "age": age}, evaluating=True)
+        ground_truth = 1 
+        estimate = (data["old"] > 0).float().mean(dim=0).item()
+        error = np.absolute(ground_truth - estimate)
+
+        self.log("do-'deer'-estimate", estimate)
+        self.log("do-'deer'-error", error)
+
+        if self.wandb:
+            wandb.log({
+                "do-'frog'-estiamte": estimate,
+                "do-'frog'-error": error
             })
