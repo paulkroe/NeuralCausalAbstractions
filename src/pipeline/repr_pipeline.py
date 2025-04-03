@@ -23,6 +23,8 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score
 import torch.nn.functional as F
 
+import warnings
+from sklearn.exceptions import ConvergenceWarning
 
 def log(x):
     return T.log(x + 1e-8)
@@ -308,6 +310,9 @@ class RepresentationalPipeline(BasePipeline):
             if self.pred_parents:
                 print("PARENT HEADS")
                 print(self.model.parent_heads)
+        
+        # ignore convergence warnings from sklearn
+        warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
     def configure_optimizers(self):
         opt_enc = T.optim.Adam(self.model.encoders.parameters(), lr=self.lr)
@@ -508,7 +513,7 @@ class RepresentationalPipeline(BasePipeline):
             features = scaler.fit_transform(features)
 
             # **Step 1: Train a Linear Probe**
-            clf = LogisticRegression(max_iter=100, solver="saga", multi_class="auto")
+            clf = LogisticRegression(max_iter=100, solver="saga")
             clf.fit(features, labels)
             pred_labels = clf.predict(features)
             linear_probe_acc = accuracy_score(labels, pred_labels)
