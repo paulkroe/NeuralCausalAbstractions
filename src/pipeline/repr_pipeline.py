@@ -310,6 +310,8 @@ class RepresentationalPipeline(BasePipeline):
             if self.pred_parents:
                 print("PARENT HEADS")
                 print(self.model.parent_heads)
+            
+        self.detailed_logging = hyperparams["detailed-logging"]
         
         # ignore convergence warnings from sklearn
         warnings.filterwarnings("ignore", category=ConvergenceWarning)
@@ -457,6 +459,9 @@ class RepresentationalPipeline(BasePipeline):
             })
 
     def on_train_epoch_end(self):
+        if not self.detailed_logging:
+            return
+        
         self.model.eval()  # Set model to evaluation mode
 
         # Get device

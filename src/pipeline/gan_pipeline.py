@@ -302,7 +302,7 @@ class GANPipeline(BasePipeline):
                 "do-'frog'-error": error
             })
 
-        labels = T.full((self.eval_samples,), 7 - 5, dtype=T.long).to(device=self.device) # set animal to 'frog'
+        labels = T.full((self.eval_samples,), 7 - 5, dtype=T.long).to(device=self.device) # set animal to 'deer'
         one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
         age = T.full((self.eval_samples, 1), 17, dtype=T.float).to(device=self.device)
         data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables, "age": age}, evaluating=True)

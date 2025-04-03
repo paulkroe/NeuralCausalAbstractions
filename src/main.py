@@ -131,6 +131,7 @@ parser.add_argument('--gpu', help="GPU to use")
 
 # Developer settings
 parser.add_argument('--verbose', action="store_true", help="print more information")
+parser.add_argument('--detailed-logging', action="store_true", help="log detailed information")
 
 args = parser.parse_args()
 
@@ -226,6 +227,7 @@ hyperparams = {
     'eval-samples': args.eval_samples,
     'img-query': not args.custom_query,
     'verbose': args.verbose,
+    'detailed-logging': args.detailed_logging,
     'wandb': args.wandb,
     'wandb-project-name': args.wandb_project_name,
     'wandb-org-name': args.wandb_org_name
