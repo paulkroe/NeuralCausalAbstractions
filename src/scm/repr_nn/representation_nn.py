@@ -53,7 +53,7 @@ class RepresentationalNN(nn.Module):
             self.proj_heads = nn.ModuleDict({
                 v: nn.Sequential(nn.Linear(hyperparams['rep-size'], hyperparams['rep-size']),
                                  nn.ReLU(),
-                                 nn.Linear(hyperparams['rep-size'], hyperparams['rep-size'] // 4))
+                                 nn.Linear(hyperparams['rep-size'], hyperparams['rep-size']))
                 for v in self.encode_v
             })
 
