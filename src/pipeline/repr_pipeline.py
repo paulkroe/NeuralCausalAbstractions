@@ -108,6 +108,11 @@ class SupConLoss(nn.Module):
     """
     Supervised Contrastive Loss as introduced in:
     "Supervised Contrastive Learning" (Khosla et al., NeurIPS 2020).
+
+    Extended to support multi-dimensional labels via composite losses.
+    If labels is 1D (shape [batch_size]), it behaves as before.
+    If labels is 2D (shape [batch_size, label_dim]), it computes a separate
+    loss for each label dimension and averages them.
     """
     def __init__(self, temperature=0.07, base_temperature=0.07):
         super(SupConLoss, self).__init__()
@@ -116,87 +121,89 @@ class SupConLoss(nn.Module):
 
     def forward(self, features, labels=None):
         """
-        Computes the supervised contrastive loss.
-
         Args:
             features (Tensor): Feature representations with shape
                 [batch_size, n_views, feature_dim] if multiple views per sample are provided,
-                or [batch_size, feature_dim] for a single view. In the latter case, a singleton
-                dimension is added.
-            labels (Tensor): Ground-truth labels with shape [batch_size]. If provided, they are used
-                to determine positive pairs. If None, the loss defaults to unsupervised contrastive
-                learning (e.g., SimCLR).
+                or [batch_size, feature_dim] for a single view (a singleton dimension is added).
+            labels (Tensor): Ground-truth labels. For a standard setup, a 1D tensor of shape [batch_size].
+                For multi-dimensional labels, a tensor of shape [batch_size, label_dim].
+                These are used to determine positive pairs.
 
         Returns:
             Tensor: The computed loss (scalar).
         """
         device = features.device
 
-        # Ensure features has three dimensions.
+        # Ensure features has three dimensions: [batch_size, n_views, feature_dim]
         if features.dim() < 3:
-            features = features.unsqueeze(1)  # now shape: [batch_size, 1, feature_dim]
+            features = features.unsqueeze(1)
 
-        # Check if the tensor dimensions are swapped.
-        # Expected shape is [batch_size, n_views, feature_dim], where typically n_views is small.
-        # If the second dimension is larger than the third (e.g. feature_dim is usually large),
-        # then we assume the order is reversed and transpose dims 1 and 2.
+        # Check if feature dimensions might be swapped.
         if features.size(1) > features.size(2):
             features = features.transpose(1, 2)
 
-        batch_size = features.shape[0]
-        n_views = features.shape[1]
+        batch_size, n_views, _ = features.shape
 
-        # Normalize the feature vectors.
+        # Normalize feature vectors.
         features = F.normalize(features, p=2, dim=-1)
-        # Uncomment these prints if you need to debug shapes.
-        # print("Normalized features shape:", features.shape)
-
-        # Combine features from all views into a single tensor: [batch_size*n_views, feature_dim]
+        # Combine all views into one tensor: [batch_size * n_views, feature_dim]
         contrast_features = T.cat(T.unbind(features, dim=1), dim=0)
-        # print("Contrast features shape:", contrast_features.shape)
 
-        # Create label mask: if labels are provided, positive pairs are those with the same label.
-        if labels is not None:
-            # Expand labels: from [batch_size] to [batch_size, n_views] then flatten to [batch_size*n_views]
-            labels = labels.repeat(1, n_views).flatten()
-            # mask[i, j] = 1 if labels[i] == labels[j], else 0.
-            mask = T.eq(labels.unsqueeze(1), labels.unsqueeze(0)).float().to(device)
-        else:
-            # If labels aren't provided, assume each instance is only positive with itself.
-            mask = T.eye(batch_size * n_views, device=device)
-
-        # Compute pairwise similarity (dot product) scaled by the temperature.
+        # Compute pairwise dot-product similarity scaled by temperature.
         anchor_dot_contrast = T.div(
             T.matmul(contrast_features, contrast_features.T),
             self.temperature
         )
 
-        # For numerical stability, subtract the max value from each row.
+        # For numerical stability, subtract the max value in each row.
         logits_max, _ = T.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach()
 
-        # Mask out self-contrast cases; we don't want to compare a sample with itself.
-        logits_mask = T.scatter(
-            T.ones_like(mask),
-            1,
-            T.arange(batch_size * n_views).view(-1, 1).to(device),
-            0
-        )
-        mask = mask * logits_mask
+        # Create mask to remove self-comparisons.
+        total_samples = batch_size * n_views
+        # Create a mask with ones and then set the diagonal to zero.
+        logits_mask = T.ones((total_samples, total_samples), device=device)
+        logits_mask = logits_mask.scatter(1, T.arange(total_samples, device=device).view(-1, 1), 0)
 
         # Compute log probabilities.
         exp_logits = T.exp(logits) * logits_mask
-        log_prob = logits - T.log(exp_logits.sum(1, keepdim=True))
+        log_prob = logits - T.log(exp_logits.sum(1, keepdim=True) + 1e-12)
 
-        # Compute mean log-likelihood over positive pairs.
-        mean_log_prob_pos = (mask * log_prob).sum(1) / (mask.sum(1) + 1e-12)
+        # Helper to compute loss given a mask.
+        def compute_loss(mask):
+            # Zero out self-contrast cases.
+            mask = mask * logits_mask
+            # Compute mean log-likelihood over positive pairs.
+            mean_log_prob_pos = (mask * log_prob).sum(1) / (mask.sum(1) + 1e-12)
+            loss_val = - (self.temperature / self.base_temperature) * mean_log_prob_pos
+            return loss_val.mean()
 
-        # Loss is the negative of the weighted log-likelihood.
-        loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
-        loss = loss.mean()
+        # If labels are provided, build the mask(s) accordingly.
+        if labels is not None:
+            # Case 1: 1D labels (standard scenario)
+            if labels.dim() == 1:
+                labels = labels.repeat(1, n_views).flatten()
+                mask = T.eq(labels.unsqueeze(1), labels.unsqueeze(0)).float().to(device)
+                loss = compute_loss(mask)
+            # Case 2: Multi-dimensional labels
+            else:
+                composite_loss = 0.0
+                num_dims = labels.size(1)
+                for i in range(num_dims):
+                    # Extract the i-th label dimension: shape [batch_size]
+                    label_i = labels[:, i]
+                    # Expand to match the views.
+                    label_i = label_i.repeat(1, n_views).flatten()
+                    # Build mask: positive if the labels match exactly for this dimension.
+                    mask_i = T.eq(label_i.unsqueeze(1), label_i.unsqueeze(0)).float().to(device)
+                    composite_loss += compute_loss(mask_i)
+                loss = composite_loss / num_dims
+        else:
+            # Unsupervised case: use identity matrix as mask.
+            mask = T.eye(total_samples, device=device)
+            loss = compute_loss(mask)
+
         return loss
-
-
 
 def supervised_contrastive_loss(embeddings, labels, temperature=0.07):
     """
@@ -420,7 +427,7 @@ class RepresentationalPipeline(BasePipeline):
             loss_reconstruct = self._get_loss(self.loss, out_batch, batch)
             loss_reconstruct_log = loss_reconstruct.item()
 
-        loss = loss_reconstruct + loss_pred_parents + loss_unsup_contrastive + 0.2 * loss_sup_contrastive
+        loss = loss_reconstruct + loss_pred_parents + loss_unsup_contrastive + loss_sup_contrastive
         
         self.manual_backward(loss)
 
