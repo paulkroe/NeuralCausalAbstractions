@@ -5,7 +5,8 @@
 
 # Compute P(old = 1 | do(one_hot_animal = 'frog'))
 # P(old = 1 | do(one_hot_animal = 'frog')) 
-# = 1/6 * (19.5/20 + 24.5/25 + 0.5/1 + 8.5/9 + 14.5/15 + 2.5/3) = 0.9074
+# = 1/6 * (19.5/20 + 24.5/25 + 0.5/1 + 8.5/9 + 14.5/15 + 2.5/3) = 0.86657
+
 import os
 import argparse
 import torch as T
