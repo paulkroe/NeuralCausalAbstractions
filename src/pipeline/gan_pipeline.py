@@ -14,6 +14,56 @@ from src.datagen import SCMDataTypes as sdt
 
 from .base_pipeline import BasePipeline
 
+class EmbeddingSampler:
+    def __init__(self, npz_path: str, device: T.device = None):
+        """
+        Loads embeddings and labels from a .npz file and prepares
+        per-label index lists for uniform sampling.
+
+        Args:
+            npz_path: Path to the .npz file containing 'embeddings' and 'labels'.
+            device:   Torch device for returned tensors (default: CPU).
+        """
+        data = np.load(npz_path)
+        self.embeddings = data['embeddings']  # shape [N, D]
+        self.labels     = data['labels']      # shape [N]
+        self.device     = device or T.device('cpu')
+
+        # Precompute index lists for each numeric label
+        unique_labels = np.unique(self.labels)
+        self.indices_by_label = {
+            int(lbl): np.where(self.labels == lbl)[0]
+            for lbl in unique_labels
+        }
+        for lbl, idxs in self.indices_by_label.items():
+            if len(idxs) == 0:
+                raise ValueError(f"No embeddings found for label {lbl}")
+
+    def __call__(self, requested: list[int]) -> list[T.Tensor]:
+        """
+        For each numeric label in `requested`, samples one embedding
+        from that label uniformly at random.
+
+        Args:
+            requested: e.g. [0, 1, 0, 1, 1, ...] where 0 and 1 correspond
+                       to classes mel=0, nv=1 as in your saved file.
+
+        Returns:
+            List of torch.Tensor embeddings, one per request.
+        """
+        out = []
+        for lbl in requested:
+            lbl += 4
+            if lbl not in self.indices_by_label:
+                raise KeyError(f"Unknown label {lbl}")
+            idxs = self.indices_by_label[lbl]
+            choice = np.random.choice(idxs)
+            emb = self.embeddings[choice]        # numpy array [D]
+            emb_t = T.from_numpy(emb).to(self.device)
+            out.append(emb_t)
+        return out
+
+sampler = EmbeddingSampler("dat/HAM10000/embeddings_labels.npz", 'cpu')
 
 
 def log(x):
@@ -78,11 +128,13 @@ class GANPipeline(BasePipeline):
 
     def forward(self, n=1000, u=None, do={}, evaluating=False):
         out = self.ncm(n, u, do, evaluating=evaluating)
-        for k, v in out.items():
-            out[k] = v.to(device=next(self.repr_model.decoders.parameters()).device)
-        if self.repr_model is not None:
+        if self.repr_model is None:
+            return out
+        else: 
+            for k, v in out.items():
+                out[k] = v.to(device=next(self.repr_model.decoders.parameters()).device)
             out = self.repr_model.decode(out)
-        return out
+            return out
 
     def sample_ctf(self, query: CTF, n=64, batch=None, max_iters=1000):
         out = self.ncm.sample_ctf(query, n, batch, max_iters)
@@ -270,51 +322,42 @@ class GANPipeline(BasePipeline):
 
     @T.no_grad()
     def on_train_epoch_end(self):
-        labels = T.full((self.eval_samples,), 7 - 2, dtype=T.long).to(device=self.device) # set animal to 'horse'
-        one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
-        data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
-        ground_truth = 0.1736
-        estimate = (data["old"] > 0).float().mean(dim=0).item()
-        error = np.absolute(ground_truth - estimate)
+        n = self.eval_samples
 
-        self.log("do-'horse'-estimate", estimate)
-        self.log("do-'horse'-error", error)
+        # --- Intervene: SES = 1, X = 1 ---
+        ses = T.ones((n, 1), dtype=T.float32).to(self.device)
+        x   = T.ones((n, 1), dtype=T.float32).to(self.device)
 
-        if self.wandb:
-            wandb.log({
-                "do-'horse'-estiamte": estimate,
-                "do-'horse'-error": error
-            })
+        # --- Intervene: EMB ~ label 1 → internally mapped to label 5 in sampler ---
+        emb_vectors = T.stack(sampler([1] * n), dim=0).to(self.device)  # list of Tensors → (n, D)
 
-        labels = T.full((self.eval_samples,), 7 - 3, dtype=T.long).to(device=self.device) # set animal to 'frog'
-        one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
-        data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables}, evaluating=True)
-        ground_truth = 0.86657
-        estimate = (data["old"] > 0).float().mean(dim=0).item()
-        error = np.absolute(ground_truth - estimate)
 
-        self.log("do-'frog'-estimate", estimate)
-        self.log("do-'frog'-error", error)
+        print("musiloin is moin lieblings")
 
-        if self.wandb:
-            wandb.log({
-                "do-'frog'-estiamte": estimate,
-                "do-'frog'-error": error
-            })
+        # --- Forward pass under intervention ---
+        data = self.forward(n=n, evaluating=True)
+        print("==========================")
+        for k, v in data.items():
+            print(f"data[{k}].shape: {v.shape}")
+        print("==========================")
+        data = self.forward(n=n, do={"EMB": emb_vectors, "SES": ses, "X": x}, evaluating=True)
+        
+        print("musiloin is natuerlich immernoch moin lieblings")
 
-        labels = T.full((self.eval_samples,), 7 - 5, dtype=T.long).to(device=self.device) # set animal to 'deer'
-        one_hot_lables = T.nn.functional.one_hot(labels, num_classes=6).to(device=self.device)
-        age = T.full((self.eval_samples, 1), 17, dtype=T.float).to(device=self.device)
-        data = self.forward(n=self.eval_samples, do={"one_hot_animal": one_hot_lables, "age": age}, evaluating=True)
-        ground_truth = 1 
-        estimate = (data["old"] > 0).float().mean(dim=0).item()
-        error = np.absolute(ground_truth - estimate)
+        # --- Estimate Y and compare to ground truth ---
+        ground_truth = 0.9  # adjust this if you have the correct expectation
+        estimate = (data["Y"] > 0).float().mean(dim=0).item()
+        error = np.abs(ground_truth - estimate)
 
-        self.log("do-'deer'-estimate", estimate)
-        self.log("do-'deer'-error", error)
+        print(f"do-(SES=1,X=1,EMB~label1)-estimate: {estimate}")
+        print(f"do-(SES=1,X=1,EMB~label1)-error: {error}")
+
+        # --- Logging ---
+        self.log("do-(SES=1,X=1,EMB~label1)-estimate", estimate)
+        self.log("do-(SES=1,X=1,EMB~label1)-error", error)
 
         if self.wandb:
             wandb.log({
-                "do-'deer'-estiamte": estimate,
-                "do-'deer'-error": error
+                "do-(SES=1,X=1,EMB~label1)-estimate": estimate,
+                "do-(SES=1,X=1,EMB~label1)-error": error,
             })

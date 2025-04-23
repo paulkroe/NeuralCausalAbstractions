@@ -6,7 +6,7 @@ import numpy as np
 from src.pipeline import GANPipeline, GANReprPipeline
 from src.scm.ncm import GAN_NCM
 from src.run import NCMRunner, MinMaxNCMRunner
-from src.datagen import ColorMNISTDataGenerator, BMIDataGenerator, AgeCifarDataGenerator
+from src.datagen import ColorMNISTDataGenerator, BMIDataGenerator, AgeCifarDataGenerator, HAM10000DataGenerator
 from src.datagen.scm_datagen import SCMDataTypes as sdt
 
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
@@ -18,8 +18,10 @@ valid_pipelines = {
 valid_generators = {
     "mnist": ColorMNISTDataGenerator,
     "bmi": BMIDataGenerator,
-    "cifar": AgeCifarDataGenerator
+    "cifar": AgeCifarDataGenerator,
+    "ham10000": HAM10000DataGenerator
 }
+
 architectures = {
     "gan": GAN_NCM,
     "gan_joint": GAN_NCM
