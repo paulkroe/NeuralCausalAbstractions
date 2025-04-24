@@ -253,12 +253,22 @@ class NCMRunner(BaseRunner):
                             vis.show_image_grid(img_sample_fake[img_var], dir=f'{d}/before_train_fake_{img_var}.png')
                 else:
                     Q_real = dat_m.calculate_query(model=None, tau=use_tau, m=100000,
-                                                    evaluating=True).item()
+                                                    evaluating=True, log=hyperparams["wandb"])
+                    if isinstance(Q_real, T.Tensor):
+                        Q_real = Q_real.item()
                     Q_estimate = dat_m.calculate_query(model=m.ncm, tau=use_tau, m=100000,
-                                                    evaluating=True).item()
-                    print("Q real: {}".format(Q_real))
-                    print("Q estimate: {}".format(Q_estimate))
-                    print("Q error: {}".format(Q_estimate - Q_real))
+                                                    evaluating=True, log=hyperparams["wandb"])
+                    
+                    # ensure both are lists
+                    if not isinstance(Q_real, (list, tuple)):
+                        Q_real = [Q_real]
+                    if not isinstance(Q_estimate, (list, tuple)):
+                        Q_estimate = [Q_estimate]
+
+                    # print each query result
+                    for i, (qr, qe) in enumerate(zip(Q_real, Q_estimate), start=1):
+                        err = qe - qr
+                        print(f"Query {i}:  real = {qr:.6f},  estimate = {qe:.6f},  error = {err:.6f}")
 
                 # Train model
                 trainer, checkpoint = self.create_trainer(d, "ncm", hyperparams['max-epochs'], hyperparams['patience'],
@@ -295,22 +305,40 @@ class NCMRunner(BaseRunner):
                             vis.show_image_grid(img_sample[img_var], dir=f'{d}/after_train_real_{img_var}.png')
                             vis.show_image_grid(img_sample_fake[img_var], dir=f'{d}/after_train_fake_{img_var}.png')
                 else:
-                    Q_real = dat_m.calculate_query(model=None, tau=use_tau, m=100000,
-                                                   evaluating=True).item()
-                    Q_estimate = dat_m.calculate_query(model=m.ncm, tau=use_tau, m=100000,
-                                                       evaluating=True).item()
+                     # Compute the queries
+                    Q_real = dat_m.calculate_query(model=None,      tau=use_tau, m=100000, evaluating=True)
+                    Q_estimate = dat_m.calculate_query(model=m.ncm, tau=use_tau, m=100000, evaluating=True)
+
+                    # Normalize to Python types: unpack tensors to floats
+                    if not isinstance(Q_real, (list, tuple)):
+                        try:
+                            Q_real = Q_real.item()
+                        except AttributeError:
+                            Q_real = float(Q_real)
+                    if not isinstance(Q_estimate, (list, tuple)):
+                        try:
+                            Q_estimate = Q_estimate.item()
+                        except AttributeError:
+                            Q_estimate = float(Q_estimate)
+
+                    # Compute error, elementwise if lists
+                    if isinstance(Q_real, (list, tuple)):
+                        Q_err = [qe - qr for qe, qr in zip(Q_estimate, Q_real)]
+                    else:
+                        Q_err = Q_estimate - Q_real
+
                     results = {
-                        "Q_real": Q_real,
+                        "Q_real":     Q_real,
                         "Q_estimate": Q_estimate,
-                        "Q_err": Q_estimate - Q_real
+                        "Q_err":      Q_err
                     }
                     with open(f'{d}/results.json', 'w') as file:
                         json.dump(results, file)
-
                 if hyperparams['wandb']:
                     wandb.finish()
 
                 return m
+            
             except Exception:
                 # Move out/*/* to err/*/*/#
                 e = d.replace("out/", "err/").rsplit('-', 1)[0]

@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import wandb
 
 import torch as T
 from torch.autograd import grad
@@ -63,7 +62,7 @@ class EmbeddingSampler:
             out.append(emb_t)
         return out
 
-sampler = EmbeddingSampler("dat/HAM10000/embeddings_labels.npz", 'cpu')
+sampler = EmbeddingSampler("dat/HAM10000/untrained_embeddings_labels.npz", 'cpu')
 
 
 def log(x):
@@ -274,18 +273,38 @@ class GANPipeline(BasePipeline):
                         self.img_lists[v].append(sample[v].detach().cpu())
                 else:
                     q_estimate = self.datagen.datagen.calculate_query(model=self.ncm, tau=self.use_tau, m=100000,
-                                                                      evaluating=True)
+                                                                      evaluating=True, log=self.wandb)
                     q_true = self.datagen.datagen.calculate_query(model=None, tau=self.use_tau, m=100000,
-                                                                  evaluating=True)
-                    self.stored_loss = T.abs(q_estimate - q_true)
-                    print("\nQ Truth: {}".format(q_true))
-                    print("Q Estimate: {}".format(q_estimate))
-                    print("Q Error: {}".format(self.stored_loss))
-                    print("Lambda: {}".format(max_reg))
+                                                                  evaluating=True, log=self.wandb)
+                    # Ensure both are lists
+                    if not isinstance(q_true, (list, tuple)):
+                        q_true = [q_true]
+                    if not isinstance(q_estimate, (list, tuple)):
+                        q_estimate = [q_estimate]
 
-                    self.log('q_truth', q_true)
-                    self.log('q_estimate', q_estimate)
-                    self.log('q_error', self.stored_loss)
+                    # Compute per-query errors
+                    errors = [abs(qe - qt) for qe, qt in zip(q_estimate, q_true)]
+
+                    # Print results
+                    print("\nQuery results:")
+                    for i, (qt, qe, err) in enumerate(zip(q_true, q_estimate, errors), start=1):
+                        print(f"  Query {i}: truth = {qt:.6f}, estimate = {qe:.6f}, error = {err:.6f}")
+                    print(f"Lambda: {max_reg}")
+
+                    # Log to self.log() and optionally wandb
+                    for i, (qt, qe, err) in enumerate(zip(q_true, q_estimate, errors), start=1):
+                        self.log(f"q{i}_truth", qt)
+                        self.log(f"q{i}_estimate", qe)
+                        self.log(f"q{i}_error", err)
+                        if self.wandb:
+                            import wandb
+                            wandb.log({
+                                f"q{i}_truth":    qt,
+                                f"q{i}_estimate": qe,
+                                f"q{i}_error":    err,
+                                "lambda":        max_reg
+                            })
+
 
                     # samples = self(n=10000, evaluating=True)
                     # print(probability_table(dat=samples))
@@ -312,6 +331,7 @@ class GANPipeline(BasePipeline):
             self.log('Q_loss', q_loss_record, prog_bar=True)
 
         if self.wandb:
+            import wandb
             wandb.log({
                 "train-epoch": self.current_epoch,
                 "train-loss": self.stored_loss,
@@ -320,44 +340,36 @@ class GANPipeline(BasePipeline):
                 "Q-loss": q_loss_record if self.optimize_query else None
             })
 
-    @T.no_grad()
-    def on_train_epoch_end(self):
-        n = self.eval_samples
+    # @T.no_grad()
+    # def on_train_epoch_end(self):
+    #     n = self.eval_samples
 
-        # --- Intervene: SES = 1, X = 1 ---
-        ses = T.ones((n, 1), dtype=T.float32).to(self.device)
-        x   = T.ones((n, 1), dtype=T.float32).to(self.device)
+    #     # --- Intervene: SES = 1, X = 1 ---
+    #     ses = T.ones((n, 1), dtype=T.float32).to(self.device)
+    #     x   = T.ones((n, 1), dtype=T.float32).to(self.device)
 
-        # --- Intervene: EMB ~ label 1 → internally mapped to label 5 in sampler ---
-        emb_vectors = T.stack(sampler([1] * n), dim=0).to(self.device)  # list of Tensors → (n, D)
+    #     # --- Intervene: EMB ~ label 1 → internally mapped to label 5 in sampler ---
+    #     emb_vectors = T.stack(sampler([1] * n), dim=0).to(self.device)  # list of Tensors → (n, D)
 
 
-        print("musiloin is moin lieblings")
-
-        # --- Forward pass under intervention ---
-        data = self.forward(n=n, evaluating=True)
-        print("==========================")
-        for k, v in data.items():
-            print(f"data[{k}].shape: {v.shape}")
-        print("==========================")
-        data = self.forward(n=n, do={"EMB": emb_vectors, "SES": ses, "X": x}, evaluating=True)
+    #     # --- Forward pass under intervention ---
+    #     data = self.forward(n=n, evaluating=True)
+    #     data = self.forward(n=n, do={"EMB": emb_vectors, "SES": ses, "X": x}, evaluating=True)
         
-        print("musiloin is natuerlich immernoch moin lieblings")
+    #     # --- Estimate Y and compare to ground truth ---
+    #     ground_truth = 0.9  # adjust this if you have the correct expectation
+    #     estimate = (data["Y"] > 0).float().mean(dim=0).item()
+    #     error = np.abs(ground_truth - estimate)
 
-        # --- Estimate Y and compare to ground truth ---
-        ground_truth = 0.9  # adjust this if you have the correct expectation
-        estimate = (data["Y"] > 0).float().mean(dim=0).item()
-        error = np.abs(ground_truth - estimate)
+    #     print(f"do-(SES=1,X=1,EMB~label1)-estimate: {estimate}")
+    #     print(f"do-(SES=1,X=1,EMB~label1)-error: {error}")
 
-        print(f"do-(SES=1,X=1,EMB~label1)-estimate: {estimate}")
-        print(f"do-(SES=1,X=1,EMB~label1)-error: {error}")
+    #     # --- Logging ---
+    #     self.log("do-(SES=1,X=1,EMB~label1)-estimate", estimate)
+    #     self.log("do-(SES=1,X=1,EMB~label1)-error", error)
 
-        # --- Logging ---
-        self.log("do-(SES=1,X=1,EMB~label1)-estimate", estimate)
-        self.log("do-(SES=1,X=1,EMB~label1)-error", error)
-
-        if self.wandb:
-            wandb.log({
-                "do-(SES=1,X=1,EMB~label1)-estimate": estimate,
-                "do-(SES=1,X=1,EMB~label1)-error": error,
-            })
+    #     if self.wandb:
+    #         wandb.log({
+    #             "do-(SES=1,X=1,EMB~label1)-estimate": estimate,
+    #             "do-(SES=1,X=1,EMB~label1)-error": error,
+    #         })
