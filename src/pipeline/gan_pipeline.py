@@ -62,7 +62,7 @@ class EmbeddingSampler:
             out.append(emb_t)
         return out
 
-sampler = EmbeddingSampler("dat/HAM10000/untrained_embeddings_labels.npz", 'cpu')
+sampler = EmbeddingSampler("dat/HAM10000/embeddings_labels.npz", 'cpu')
 
 
 def log(x):
@@ -263,7 +263,7 @@ class GANPipeline(BasePipeline):
         self.ncm.pu.zero_grad()
 
         # logging
-        if (self.current_epoch + 1) % 10 == 0:
+        if (self.current_epoch + 1) % 5 == 0:
             if not self.logged:
                 self.logged = True
 

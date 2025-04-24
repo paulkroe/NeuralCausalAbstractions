@@ -125,7 +125,7 @@ class HAM10000DataGenerator(SCMDataGenerator):
         }
         self.cg = "ham10000"
 
-        self.sampler = EmbeddingSampler("dat/HAM10000/untrained_embeddings_labels.npz", 'cpu')
+        self.sampler = EmbeddingSampler("dat/HAM10000/embeddings_labels.npz", 'cpu')
 
     def _sample_exogenous(self, n: int):
         """
@@ -135,8 +135,9 @@ class HAM10000DataGenerator(SCMDataGenerator):
          - uniform u for Y
          - sampler indices for actual EMB tensor
         """
-        probs0 = [0.25, 0.25, 0.25, 0.25]
-        probs1 = [0.25, 0.25, 0.25, 0.25]
+        # 00 01 10 11
+        probs0 = [0.45, 0.05, 0.45, 0.05]
+        probs1 = [0.45, 0.45, 0.05, 0.05]
 
         emb_ses = sample_binary_2d(probs0, n)    # shape (n,2)
         ses_x   = sample_binary_2d(probs1, n)    # shape (n,2)
@@ -194,15 +195,10 @@ class HAM10000DataGenerator(SCMDataGenerator):
 
         # 4) compute Y using the SCM thresholds
         thresh = {
-            (0,0,0): 0.95, (0,0,1): 0.80,
-            (0,1,0): 0.99, (0,1,1): 0.85,
-            (1,0,0): 0.10, (1,0,1): 0.85,
-            (1,1,0): 0.15, (1,1,1): 0.95,
-
-            # (0,0,0): 1, (0,0,1): 0,
-            # (0,1,0): 1, (0,1,1): 0,
-            # (1,0,0): 0, (1,0,1): 1,
-            # (1,1,0): 0, (1,1,1): 1,
+            (0,0,0): 0.9, (0,0,1): 0.85,
+            (0,1,0): 0.95, (0,1,1): 0.90,
+            (1,0,0): 0.10, (1,0,1): 0.7,
+            (1,1,0): 0.20, (1,1,1): 0.75,
         }
         y_bits = np.array([
             int(u[i] <= thresh[(emb_bits[i], x_bits[i], ses_bits[i])])
@@ -334,16 +330,16 @@ class HAM10000DataGenerator(SCMDataGenerator):
         x   = T.ones((m,1), dtype=T.float32, device=self.device)
         # for EMB we pass class labels 0 or 1
 
-        emb0 = T.zeros((m,1),dtype=T.long,   device=self.device)
-        emb1 = T.ones((m,1), dtype=T.long,   device=self.device)
+        # emb0 = T.zeros((m,1),dtype=T.long,   device=self.device)
+        # emb1 = T.ones((m,1), dtype=T.long,   device=self.device)
 
         embs0 = T.zeros((m,1),dtype=T.long,   device=self.device)
         embs1 = T.ones((m,1), dtype=T.long,   device=self.device)
 
 
         if model is not None:
-            emb0 = (self.sampler([0])[0]).unsqueeze(0).repeat(m, 1) # want to fix an embedding (observe one patient)
-            emb1 = (self.sampler([1])[0]).unsqueeze(0).repeat(m, 1)
+            # emb0 = (self.sampler([0])[0]).unsqueeze(0).repeat(m, 1) # want to fix an embedding (observe one patient)
+            # emb1 = (self.sampler([1])[0]).unsqueeze(0).repeat(m, 1)
 
             embs0 = T.stack(self.sampler(T.zeros((m,1), dtype=T.long, device=self.device)), dim=0)
             embs1 = T.stack(self.sampler(T.ones((m,1), dtype=T.long, device=self.device)), dim=0)
@@ -357,7 +353,9 @@ class HAM10000DataGenerator(SCMDataGenerator):
             # ("P(Y = 1 | SES=1,do-(X=1,EMB=1))",    {"SES": ses}, {"X": x, "EMB": emb1}),
             # ("P(Y = 1 | do-(EMB=0))", {}, {"EMB": embs0}),
             # ("P(Y = 1 | do-(EMB=1))", {}, {"EMB": embs1}),
-            ("P(Y = 1 | do-(EMB=1, SES-1))", {}, {"SES": ses, "EMB": embs1}),
+            # (Name, Obs, Do)
+            ("P(Y = 1 | do-(EMB-0, SES-1))", {}, {"SES": ses, "EMB": embs0}),
+            ("P(Y = 1 | do-(EMB-1, SES-1))", {}, {"SES": ses, "EMB": embs1}),
         ]
 
             
