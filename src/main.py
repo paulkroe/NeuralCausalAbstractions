@@ -104,6 +104,8 @@ parser.add_argument('--disc-h-layers', type=int, default=2,
                     help="number of hidden layers in discriminator (default: 2)")
 parser.add_argument('--disc-h-size', type=int, default=-1,
                     help="width of hidden layers in discriminator (default: computed from size of inputs)")
+parser.add_argument('--g-iters', type=int, default=1,
+                    help="number of generator iterations per discriminator iteration (default: 1)")
 parser.add_argument('--d-iters', type=int, default=1,
                     help="number of discriminator iterations per generator iteration (default: 1)")
 parser.add_argument('--grad-clamp', type=float, default=0.01,
@@ -195,6 +197,7 @@ hyperparams = {
     'disc-h-layers': args.disc_h_layers,
     'disc-h-size': args.disc_h_size,
     'd-iters': args.d_iters,
+    'g-iters': args.g_iters,
     'grad-clamp': args.grad_clamp,
     'gp-weight': args.gp_weight,
     'gp-one-side': args.gp_one_side,
