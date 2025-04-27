@@ -352,6 +352,8 @@ class HAM10000DataGenerator(SCMDataGenerator):
         queries = [
             # name,             obs dict,                 do dict
             ("P(Y=1|do-(EMB=1, X=0))", {},                       {"X": x0, "EMB": embs1}),
+            ("P(Y=1|do-(EMB=1, X=1))", {},                       {"X": x1, "EMB": embs1}),
+            ("P(Y=1|do-(EMB=1, SES=1))", {},                       {"SES": ses1, "EMB": embs1}),
         ]
 
         estimates = []

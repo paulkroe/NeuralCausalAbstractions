@@ -125,6 +125,7 @@ class GANPipeline(BasePipeline):
             print(self.disc.f_disc)
 
         self.wandb = hyperparams["wandb"]
+        self.pretrain_d_epochs = 1
 
     def forward(self, n=1000, u=None, do={}, evaluating=False):
         out = self.ncm(n, u, do, evaluating=evaluating)
@@ -155,7 +156,14 @@ class GANPipeline(BasePipeline):
 
     def _get_D_loss(self, real_out, fake_out):
         if self.gan_mode == "wgan" or self.gan_mode == "wgangp":
-            return -(T.mean(real_out) - T.mean(fake_out))
+            E_real = T.mean(real_out)
+            E_fake = T.mean(fake_out)
+            import wandb
+            wandb.log({
+                "E_real": E_real,
+                "E_fake": E_fake
+            })
+            return -(E_real - E_fake)
         else:
             return -T.mean(log(real_out) + log(1 - fake_out))
 
@@ -191,37 +199,54 @@ class GANPipeline(BasePipeline):
             return self.gp_weight * (T.relu(gradients_norm - self.grad_clamp) ** 2).mean()
         return self.gp_weight * ((gradients_norm - self.grad_clamp) ** 2).mean()
 
+    
+    def on_train_start(self) -> None:
+        # called once before epoch 0
+        # freeze generator + PU for pre-training
+        for p in self.ncm.f.parameters():
+            p.requires_grad = False
+        for p in self.ncm.pu.parameters():
+            p.requires_grad = False
+        self._pretraining = True
+        print(f"[GANPipeline] Pre-training D for {self.pretrain_d_epochs} epochs → G frozen")
+
+    def on_train_epoch_start(self) -> None:
+        # unfreeze generator when we hit the cutoff epoch
+        if self.current_epoch == self.pretrain_d_epochs:
+            for p in self.ncm.f.parameters():
+                p.requires_grad = True
+            for p in self.ncm.pu.parameters():
+                p.requires_grad = True
+            self._pretraining = False
+            print("[GANPipeline] Finished D pre-training → G unfrozen")
+    
+    
     def training_step(self, batch, batch_idx):
         G_opt, D_opt, PU_opt = self.optimizers()
         ncm_n = self.ncm_batch_size
 
-        # zero all grads
         G_opt.zero_grad()
         PU_opt.zero_grad()
 
-        ### ————————————— Train Discriminator ————————————— ###
-        total_d_loss = 0.0
+        # Train Discriminator
+        total_d_loss = 0
         for d_iter in range(self.d_iters):
             D_opt.zero_grad()
-
             ncm_batch = self.ncm(ncm_n)
-
-            real_batch = {
-                k: v[d_iter*self.cut_batch_size:(d_iter+1)*self.cut_batch_size].float()
-                for k, v in batch.items()
-            }
+            real_batch = {k: v[d_iter * self.cut_batch_size:(d_iter + 1) * self.cut_batch_size].float()
+                          for (k, v) in batch.items()}
             if self.repr_model is not None:
                 real_batch = self.repr_model.encode(real_batch)
-                real_batch = {k: v.detach() for k, v in real_batch.items()}
+                real_batch = {k: v.detach() for (k, v) in real_batch.items()}
 
-            real_out = self.disc(real_batch)
-            fake_out = self.disc(ncm_batch)
-            D_loss  = self._get_D_loss(real_out, fake_out)
+            ncm_disc_real_out = self.disc(real_batch)
+            ncm_disc_fake_out = self.disc(ncm_batch)
+            D_loss = self._get_D_loss(ncm_disc_real_out, ncm_disc_fake_out)
 
             if self.gan_mode == "wgangp":
-                gp = self._get_gradient_penalty(real_batch, ncm_batch)
-                self.log('grad_penalty', gp, prog_bar=True)
-                D_loss = D_loss + gp
+                grad_penalty = self._get_gradient_penalty(real_batch, ncm_batch)
+                self.log('grad_penalty', grad_penalty, prog_bar=True)
+                D_loss += grad_penalty
 
             total_d_loss += D_loss.item()
             self.manual_backward(D_loss)
@@ -237,48 +262,38 @@ class GANPipeline(BasePipeline):
             self.disc.zero_grad()
             self.ncm.pu.zero_grad()
 
+        # Train Generator
+        g_loss_record = 0
+        ncm_batch = self.ncm(ncm_n)
+        ncm_disc_fake_out = self.disc(ncm_batch)
+        G_loss = self._get_G_loss(ncm_disc_fake_out)
+        g_loss_record += G_loss.item()
+        self.manual_backward(G_loss)
 
-        ### ————————————— Train Generator ————————————— ###
-        g_loss_record = 0.0
-        q_loss_record = 0.0
-        max_reg      = 0.0
+        # Optimize Query
+        max_reg = 0
+        if self.optimize_query:
+            reg_ratio = min(self.current_epoch, self.max_query_iters) / self.max_query_iters
+            reg_up = np.log(self.max_lambda)
+            reg_low = np.log(self.min_lambda)
+            max_reg = np.exp(reg_up - reg_ratio * (reg_up - reg_low))
 
-        for g_iter in range(self.g_iters):
-            G_opt.zero_grad()
-            PU_opt.zero_grad()
+            Q_loss = self.datagen.datagen.calculate_query(model=self.ncm, tau=self.use_tau, m=10000,
+                                                  evaluating=False, maximize=self.maximize)
+            Q_loss = Q_loss * max_reg
+            q_loss_record = Q_loss.item()
+            self.manual_backward(Q_loss)
 
-            ncm_batch = self.ncm(ncm_n)
-            fake_out  = self.disc(ncm_batch)
-            G_loss    = self._get_G_loss(fake_out)
-            g_loss_record += G_loss.item()
-            self.manual_backward(G_loss)
+        if ((batch_idx + 1) % self.grad_acc) == 0:
+            G_opt.step()
+            PU_opt.step()
 
-            if self.optimize_query:
-                reg_ratio = min(self.current_epoch, self.max_query_iters) / self.max_query_iters
-                λ_up, λ_low = np.log(self.max_lambda), np.log(self.min_lambda)
-                max_reg = np.exp(λ_up - reg_ratio*(λ_up - λ_low))
+        self.ncm.f.zero_grad()
+        self.disc.zero_grad()
+        self.ncm.pu.zero_grad()
 
-                Q_loss = self.datagen.datagen.calculate_query(
-                    model=self.ncm,
-                    tau=self.use_tau,
-                    m=10000,
-                    evaluating=False,
-                    maximize=self.maximize
-                ) * max_reg
-                q_loss_record = Q_loss.item()
-                g_loss_record += q_loss_record
-                self.manual_backward(Q_loss)
-
-            if ((self.g_iters * batch_idx + g_iter + 1) % self.grad_acc) == 0:
-                G_opt.step()
-                PU_opt.step()
-
-            self.ncm.f.zero_grad()
-            self.disc.zero_grad()
-            self.ncm.pu.zero_grad()
-
-
-        if (self.current_epoch + 1) % 5 == 0:
+        # logging
+        if (self.current_epoch + 1) % 10 == 0:
             if not self.logged:
                 self.logged = True
 
@@ -317,16 +332,31 @@ class GANPipeline(BasePipeline):
                                 f"q{i}_truth": qt,
                                 f"q{i}_estimate": qe,
                                 f"q{i}_error": err,
-                                "lambda":       max_reg
                             })
+
+                    # samples = self(n=10000, evaluating=True)
+                    # print(probability_table(dat=samples))
+
+
+                # big_samp_size = self.ncm_batch_size
+                # big_sample = self(n=self.ncm_batch_size)
+                # eval_samples = {k: v for (k, v) in big_sample.items() if self.v_type['k'] != sdt.IMAGE}
+                # while big_samp_size < 10000:
+                #     big_samp_size += self.ncm_batch_size
+                #     big_sample = self(n=self.ncm_batch_size)
+                #     for k in eval_samples:
+                #         eval_samples[k] = T.concat((eval_samples[k], big_sample[k]), dim=0)
+                #     fake_prob_table = probability_table(dat=eval_samples)
+                #     self.stored_kl = kl(self.dat_prob_table, fake_prob_table)
+
         else:
             self.logged = False
 
         self.log('train_loss', self.stored_loss, prog_bar=True)
-        self.log('G_loss',    g_loss_record, prog_bar=True)
-        self.log('D_loss',    total_d_loss,  prog_bar=True)
+        self.log('G_loss', g_loss_record, prog_bar=True)
+        self.log('D_loss', total_d_loss, prog_bar=True)
         if self.optimize_query:
-            self.log('Q_loss',  q_loss_record,  prog_bar=True)
+            self.log('Q_loss', q_loss_record, prog_bar=True)
 
         if self.wandb:
             import wandb

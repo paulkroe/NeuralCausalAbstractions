@@ -1,25 +1,26 @@
 rm -r out
 
 python -m src.main HAM10000 sampling ham10000 gan \
+--n-samples 10000 \
 --alpha 0.99 \
 --batch-norm \
 --d-iters 1 \
+--g-iters 1 \
 --data-bs 1000 \
 --disc-h-layers 2 \
 --disc-h-size -1 \
---disc-lr 0.0002 \
+--disc-lr 1e-4 \
 --disc-type "biggan" \
 --eval-samples 100 \
 --feature-maps 64 \
---g-iters 1 \
 --gan-arch "biggan" \
 --gan-mode "wgan" \
 --gp-weight 10 \
 --grad-acc 1 \
---grad-clamp 0.01 \
+--grad-clamp 1 \
 --h-layers 1 \
 --h-size 2 \
---lr 0.005 \
+--lr 3e-4 \
 --max-epochs 100 \
 --max-lambda 0.01 \
 --min-lambda 0.0001 \
