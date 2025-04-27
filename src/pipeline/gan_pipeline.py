@@ -320,7 +320,6 @@ class GANPipeline(BasePipeline):
                     print("\nQuery results:")
                     for i, (qt, qe, err) in enumerate(zip(q_true, q_estimate, errors), start=1):
                         print(f"  Query {i}: truth = {qt:.6f}, estimate = {qe:.6f}, error = {err:.6f}")
-                    print(f"Lambda: {max_reg}")
 
                     for i, (qt, qe, err) in enumerate(zip(q_true, q_estimate, errors), start=1):
                         self.log(f"q{i}_truth", qt)
@@ -333,6 +332,26 @@ class GANPipeline(BasePipeline):
                                 f"q{i}_estimate": qe,
                                 f"q{i}_error": err,
                             })
+
+                    errs = np.array(errors, dtype=float)
+                    mae  = errs.mean()
+                    rmse = np.sqrt((errs**2).mean())
+                    maxe = errs.max()
+
+                    print(f"  MAE  = {mae:.6f}")
+                    print(f"  RMSE = {rmse:.6f}")
+                    print(f"  MaxE = {maxe:.6f}")
+
+                    self.log("mae", mae)
+                    self.log("rmse", rmse)
+                    self.log("max_error", maxe)
+                    if self.wandb:
+                        import wandb
+                        wandb.log({
+                            "mae": mae,
+                            "rmse": rmse,
+                            "max_error": maxe,
+                        })
 
                     # samples = self(n=10000, evaluating=True)
                     # print(probability_table(dat=samples))

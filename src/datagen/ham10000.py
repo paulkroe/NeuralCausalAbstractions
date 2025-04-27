@@ -289,7 +289,12 @@ class HAM10000DataGenerator(SCMDataGenerator):
 
         while len(matched) < n and iters < max_iters:
             # 1) generate a batch under do
-            batch = model.forward(n=n, do=do, evaluating=evaluating)
+            batch = model.forward(n=n, do=do, evaluating=False)
+            # print("----")
+            # print(batch['Y'][0:20])
+            # print(batch['Y'].mean())
+            # print(batch['Y'].std())
+            # assert 0
 
             # 2) build mask for obs
             if obs:
@@ -320,12 +325,7 @@ class HAM10000DataGenerator(SCMDataGenerator):
 
 
     def calculate_query(self, model, tau, m, evaluating, log=False):
-        m = 5000
-        """
-        Compute four causal queries under SCM:
-        1) P​(Y=1 ∣ SES=1, do-(X=1,EMB=1)) = P(Y=1 | SES=1, EMB=1, do-(X=1)) (Do-Calculus Rule 3)
-        2) P​(Y=1 ∣ SES=1, do-(X=1,EMB=0)) = P(Y=1 | SES=1, EMB=1, do-(X=1)) (Do-Calculus Rule 3)
-        """
+        m = 2500 
         
         ses0 = T.zeros((m,1), dtype=T.float32, device=self.device)
         ses1 = T.ones((m,1), dtype=T.float32, device=self.device)
@@ -335,7 +335,6 @@ class HAM10000DataGenerator(SCMDataGenerator):
         
         embs0 = T.zeros((m,1),dtype=T.long,   device=self.device)
         embs1 = T.ones((m,1), dtype=T.long,   device=self.device)
-
 
         if model is not None:
 
@@ -351,6 +350,10 @@ class HAM10000DataGenerator(SCMDataGenerator):
             ("P(Y = 1 | do-(EMB-1, SES-0))", {}, {"SES": ses0, "EMB": embs1}),
             ("P(Y = 1 | do-(EMB-0, SES-1))", {}, {"SES": ses1, "EMB": embs0}),
             ("P(Y = 1 | do-(EMB-1, SES-1))", {}, {"SES": ses1, "EMB": embs1}),
+            ("P(Y = 1 | do-(X-0, SES-0))", {}, {"SES": ses0, "X": x0}),
+            ("P(Y = 1 | do-(X-1, SES-0))", {}, {"SES": ses0, "X": x1}),
+            ("P(Y = 1 | do-(X-0, SES-1))", {}, {"SES": ses1, "X": x0}),
+            ("P(Y = 1 | do-(X-1, SES-1))", {}, {"SES": ses1, "X": x1}),
         ]
 
             

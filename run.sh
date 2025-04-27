@@ -18,16 +18,16 @@ python -m src.main HAM10000 sampling ham10000 gan \
 --gp-weight 10 \
 --grad-acc 1 \
 --grad-clamp 1 \
---h-layers 6 \
---h-size 1 \
---lr 1e-7 \
+--h-layers 1 \
+--h-size 3 \
+--lr 1e-8 \
 --gpu 0 \
---max-epochs 100 \
+--max-epochs 250 \
 --max-lambda 0.01 \
 --min-lambda 0.0001 \
 --ncm-bs 256 \
 --no-repr \
---patience 100 \
+--patience 250 \
 --rep-type "real" \
 --custom-query \
 --scale-h-size \
