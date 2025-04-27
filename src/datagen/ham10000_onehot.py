@@ -113,16 +113,16 @@ class HAM10000DataGenerator(SCMDataGenerator):
         self.evaluating = evaluating
         
         self.v_size = {
-            'X': 1,
+            'X': 2,
             'EMB': 512,
-            'SES': 1,
-            'Y': 1
+            'SES': 2,
+            'Y': 2
         }
         self.v_type = {
-            'X': sdt.BINARY_ONES,
+            'X': sdt.ONE_HOT,
             'EMB': sdt.REAL,
-            'SES': sdt.BINARY_ONES,
-            'Y': sdt.BINARY_ONES
+            'SES': sdt.ONE_HOT,
+            'Y': sdt.ONE_HOT
         }
         self.cg = "ham10000"
 
@@ -159,10 +159,11 @@ class HAM10000DataGenerator(SCMDataGenerator):
             'idx':     sampler_idx
         }
 
+
     def _compute_from_exogenous(self, exog: dict, do: dict = None):
         """
         Given exogenous noise + optional do-intervention, compute:
-        EMB tensor, SES bit, X bit, Y bit
+        EMB tensor, SES one-hot, X one-hot, Y one-hot
         """
         do = do or {}
 
@@ -171,32 +172,30 @@ class HAM10000DataGenerator(SCMDataGenerator):
         u       = exog['u']
         idx     = exog['idx']
 
-        # 1) structural equations
+        # 1) structural equations (raw bits 0/1)
         emb_bits = emb_ses[:, 0].astype(int)
         ses_bits = np.logical_or(emb_ses[:, 1], ses_x[:, 0]).astype(int)
         x_bits   = ses_x[:, 1].astype(int)
 
-        # 2) interventions on SES/X
+        # 2) interventions on SES/X override those bits
         if 'SES' in do:
-            ses_bits = (do['SES'].squeeze().cpu().numpy() > 0).astype(int)
+            # do['SES'] is one-hot, pick the class index
+            ses_bits = do['SES'].argmax(dim=1).cpu().numpy().astype(int)
         if 'X' in do:
-            x_bits   = (do['X'].squeeze().cpu().numpy()   > 0).astype(int)
+            x_bits   = do['X'].argmax(dim=1).cpu().numpy().astype(int)
 
         # 3) intervention on EMB class
         if 'EMB' in do:
-            # do['EMB'] is a Tensor of shape (n,1) with values in {0,1}
-            cls_arr  = do['EMB'].squeeze().cpu().numpy().astype(int)
-            emb_bits = cls_arr
-            # sample embeddings for those classes
+            cls_arr    = do['EMB'].squeeze().cpu().numpy().astype(int)
+            emb_bits   = cls_arr
             emb_tensor = T.stack(self.sampler(cls_arr.tolist()), dim=0).to(self.device)
         else:
-            # default: use the exogenous sampler_idx
             emb_np     = self.sampler.embeddings[idx]   # shape (n, D)
             emb_tensor = T.from_numpy(emb_np).to(self.device)
 
-        # 4) compute Y using the SCM thresholds
+        # 4) compute Y bits via threshold SCM
         thresh = {
-            (0,0,0): 0.9, (0,0,1): 0.85,
+            (0,0,0): 0.9,  (0,0,1): 0.85,
             (0,1,0): 0.95, (0,1,1): 0.90,
             (1,0,0): 0.10, (1,0,1): 0.7,
             (1,1,0): 0.20, (1,1,1): 0.75,
@@ -206,52 +205,54 @@ class HAM10000DataGenerator(SCMDataGenerator):
             for i in range(len(u))
         ], dtype=int)
 
-        # 5) remap bits 0→−1, 1→+1
-        ses_bits[ses_bits == 0] = -1
-        x_bits[  x_bits   == 0] = -1
-        y_bits[  y_bits   == 0] = -1
+        # 5) one-hot encode SES, X, Y
+        ses_oh = F.one_hot(T.from_numpy(ses_bits).long(), num_classes=2).float().to(self.device)
+        x_oh   = F.one_hot(T.from_numpy(x_bits).long(),   num_classes=2).float().to(self.device)
+        y_oh   = F.one_hot(T.from_numpy(y_bits).long(),   num_classes=2).float().to(self.device)
 
-        # 6) package as tensors
-        ses = T.from_numpy(ses_bits).float().unsqueeze(1).to(self.device)
-        x   = T.from_numpy(x_bits).float().unsqueeze(1).to(self.device)
-        y   = T.from_numpy(y_bits).float().unsqueeze(1).to(self.device)
-
-        return {'EMB': emb_tensor, 'SES': ses, 'X': x, 'Y': y}
+        return {'EMB': emb_tensor, 'SES': ses_oh, 'X': x_oh, 'Y': y_oh}
 
     def generate_samples(self, n: int, obs: dict = None, do: dict = None):
         """
-        Unified data generator.
-
+        Unified data generator with one-hot SES/X/Y.
         Args:
-            n (int): number of samples to return
-            obs (dict, optional): observed values for 'SES' and/or 'X' (each a Tensor of shape (1,) or (n,1))
-            do (dict, optional): do-intervention values for any of 'EMB', 'SES', or 'X' (each a Tensor of shape (n,D) or (n,1))
-
-        Returns:
-            dict with keys 'EMB', 'SES', 'X', 'Y' (all Tensors on CPU)
+            n (int)
+            obs: may contain 'SES' and/or 'X' as one-hot Tensors (shape (1,2) or (n,2))
+            do:  may contain 'SES','X' (one-hot) or 'EMB' (embeddings)
         """
         obs = obs or {}
         do  = do  or {}
 
         # 1) If obs is provided, filter exogenous noise until we have n matches
         if obs:
-            if any(k == 'EMB' for k in obs):
+            if 'EMB' in obs:
                 raise ValueError("Cannot observe 'EMB'.")
 
             max_bs     = 5 * n
             exog_match = []
 
             while len(exog_match) < n:
-                exog   = self._sample_exogenous(max_bs)
-                batch  = self._compute_from_exogenous(exog)
+                exog  = self._sample_exogenous(max_bs)
+                batch = self._compute_from_exogenous(exog, do=do)
 
-                mask = np.ones(max_bs, dtype=bool)
+                # Precompute obs‐class labels for this batch
+                obs_labels = {}
                 for key, tensor in obs.items():
-                    if key not in ('SES', 'X'):
+                    if key not in ('SES','X'):
                         raise ValueError("Can only observe SES or X.")
-                    target = tensor.squeeze().cpu().numpy().ravel()[0]
-                    vals   = batch[key].squeeze().cpu().numpy()
-                    mask  &= (vals == target)
+                    arr = tensor.squeeze().cpu().numpy()
+                    # arr shape: (1,2) or (n,2)
+                    cls = np.argmax(arr, axis=1)                  # length = 1 or n
+                    if cls.size == 1:
+                        cls = np.repeat(cls, max_bs)              # broadcast scalar to batch
+                    obs_labels[key] = cls                        # size = max_bs
+
+                # Build mask by comparing argmax(batch[key]) to obs_labels[key]
+                mask = np.ones(max_bs, dtype=bool)
+                for key, labels in obs_labels.items():
+                    vals = batch[key].squeeze().cpu().numpy()    # shape (max_bs,2)
+                    vals_cls = np.argmax(vals, axis=1)           # shape (max_bs,)
+                    mask &= (vals_cls == labels)
 
                 idxs = np.nonzero(mask)[0]
                 for i in idxs:
@@ -269,18 +270,20 @@ class HAM10000DataGenerator(SCMDataGenerator):
             }
 
         else:
-            # no observation filtering: sample exactly n exogenous draws
+            # no obs filtering, sample exactly n exogenous draws
             exog = self._sample_exogenous(n)
 
-        # 2) Compute all variables under the intervention do
+        # 2) Compute all variables under intervention `do`
         data = self._compute_from_exogenous(exog, do=do)
-        data =  {k: v.cpu() for k, v in data.items()}
-        return data
+
+        # 3) Move to CPU
+        return {k: v.cpu() for k, v in data.items()}
+
     
     def _sample_model_with_obs_do(self, model, n, do: dict, obs: dict = None, evaluating: bool = False):
         """
-        Draw n valid Y samples from the SCM under intervention do,
-        filtering each batch by obs. Repeats up to 10*n times.
+        Draw n valid Y samples from the SCM under intervention `do`,
+        filtering each batch by `obs`. Repeats up to 10*n times.
         Returns a tensor of shape (n,1).
         """
         max_iters = 10 * n
@@ -316,68 +319,60 @@ class HAM10000DataGenerator(SCMDataGenerator):
             raise RuntimeError(f"Only found {len(matched)}/{n} matches after {iters} iterations")
 
         # stack into shape (n,1)
-        return T.stack(matched[:n], dim=0).unsqueeze(1)
-
+        return T.stack(matched[:n], dim=0)
 
     def calculate_query(self, model, tau, m, evaluating, log=False):
-        m = 5000
         """
-        Compute four causal queries under SCM:
-        1) P​(Y=1 ∣ SES=1, do-(X=1,EMB=1)) = P(Y=1 | SES=1, EMB=1, do-(X=1)) (Do-Calculus Rule 3)
-        2) P​(Y=1 ∣ SES=1, do-(X=1,EMB=0)) = P(Y=1 | SES=1, EMB=1, do-(X=1)) (Do-Calculus Rule 3)
+        Compute flexible causal queries under one-hot encoding.
+        Returns list of P(Y=1) for each (obs,do) triple in `queries`.
         """
-        
-        ses0 = T.zeros((m,1), dtype=T.float32, device=self.device)
-        ses1 = T.ones((m,1), dtype=T.float32, device=self.device)
-       
-        x0   = T.zeros((m,1), dtype=T.float32, device=self.device)
-        x1   = T.ones((m,1), dtype=T.float32, device=self.device)
-        
-        embs0 = T.zeros((m,1),dtype=T.long,   device=self.device)
-        embs1 = T.ones((m,1), dtype=T.long,   device=self.device)
 
+        m = 5000
+
+        # 1) Build one-hot intervention vectors for SES and X
+        #    class 0 → [1,0], class 1 → [0,1]
+        labels0 = T.zeros(m, dtype=T.long, device=self.device)
+        labels1 = T.ones(m,  dtype=T.long, device=self.device)
+
+        ses0 = F.one_hot(labels0, num_classes=2).float()  # (m,2)
+        ses1 = F.one_hot(labels1, num_classes=2).float()
+        x0   = F.one_hot(labels0, num_classes=2).float()
+        x1   = F.one_hot(labels1, num_classes=2).float()
+
+        # 2) If using the model, also sample EMB embeddings here
+
+        embs0 = labels0
+        embs1 = labels1
 
         if model is not None:
+            embs0 = T.stack(self.sampler([0]*m), dim=0).to(self.device)
+            embs1 = T.stack(self.sampler([1]*m), dim=0).to(self.device)
 
-            embs0 = T.stack(self.sampler(T.zeros((m,1), dtype=T.long, device=self.device)), dim=0)
-            embs1 = T.stack(self.sampler(T.ones((m,1), dtype=T.long, device=self.device)), dim=0)
-        
+        # 3) Declare your queries as (name, obs, do)
         queries = [
-            ("P(Y = 1 | do-(EMB-0, X-0))", {}, {"X": x0, "EMB": embs0}),
-            ("P(Y = 1 | do-(EMB-1, X-0))", {}, {"X": x0, "EMB": embs1}),
-            ("P(Y = 1 | do-(EMB-0, X-1))", {}, {"X": x1, "EMB": embs0}),
-            ("P(Y = 1 | do-(EMB-1, X-1))", {}, {"X": x1, "EMB": embs1}),
-            ("P(Y = 1 | do-(EMB-0, SES-0))", {}, {"SES": ses0, "EMB": embs0}),
-            ("P(Y = 1 | do-(EMB-1, SES-0))", {}, {"SES": ses0, "EMB": embs1}),
-            ("P(Y = 1 | do-(EMB-0, SES-1))", {}, {"SES": ses1, "EMB": embs0}),
-            ("P(Y = 1 | do-(EMB-1, SES-1))", {}, {"SES": ses1, "EMB": embs1}),
+            # name,             obs dict,                 do dict
+            ("P(Y=1|do-(EMB=1, X=0))", {},                       {"X": x0, "EMB": embs1}),
+            ("P(Y=1|do-(EMB=1, X=1))", {},                       {"X": x1, "EMB": embs1}),
+            ("P(Y=1|do-(EMB=1, SES=1))", {},                       {"SES": ses1, "EMB": embs1}),
         ]
 
-            
         estimates = []
         for name, obs, do in queries:
-            # 1) sample Y under model (with obs filtering) or fallback
+            # 4) Sample Y under model or fallback
             if model is not None:
-                y_samples = self._sample_model_with_obs_do(
+                y_oh = self._sample_model_with_obs_do(
                     model=model, n=m, do=do, obs=obs, evaluating=evaluating
-                )
+                )  # returns (m,2) one-hot for Y
             else:
-                data      = self.generate_samples(m, obs=obs, do=do)
-                y_samples = data["Y"].to(self.device)
+                data = self.generate_samples(m, obs=obs, do=do)
+                y_oh = data["Y"].to(self.device)    # (m,2)
 
-            # 2) convert Y∈{-1,+1}→{0,1} and average
-            y01 = (y_samples >= 0).float()
-            prob = float(y01.mean().item())
-
-            estimates.append(prob)
-
-            # 3) optional logging
-            if log:
-                if model is not None:
-                    name = f"~{name}"
-                wandb.log({name: prob})
+            # 5) P(Y=1) is the mean of the second channel
+            p = float(y_oh[:,1].float().mean().item())
+            estimates.append(p)
 
         return estimates
+
 
 if __name__ == "__main__":
 
