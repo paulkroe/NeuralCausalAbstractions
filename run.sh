@@ -9,7 +9,7 @@ python -m src.main HAM10000 sampling ham10000 gan \
 --data-bs 1000 \
 --disc-h-layers 2 \
 --disc-h-size -1 \
---disc-lr 2e-4 \
+--disc-lr 1e-4 \
 --disc-type "biggan" \
 --eval-samples 100 \
 --feature-maps 64 \
@@ -18,9 +18,9 @@ python -m src.main HAM10000 sampling ham10000 gan \
 --gp-weight 10 \
 --grad-acc 1 \
 --grad-clamp 1 \
---h-layers 4 \
+--h-layers 6 \
 --h-size 1 \
---lr 1e-8 \
+--lr 1e-7 \
 --gpu 0 \
 --max-epochs 100 \
 --max-lambda 0.01 \
