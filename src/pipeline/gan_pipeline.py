@@ -200,25 +200,25 @@ class GANPipeline(BasePipeline):
         return self.gp_weight * ((gradients_norm - self.grad_clamp) ** 2).mean()
 
     
-    def on_train_start(self) -> None:
-        # called once before epoch 0
-        # freeze generator + PU for pre-training
-        for p in self.ncm.f.parameters():
-            p.requires_grad = False
-        for p in self.ncm.pu.parameters():
-            p.requires_grad = False
-        self._pretraining = True
-        print(f"[GANPipeline] Pre-training D for {self.pretrain_d_epochs} epochs → G frozen")
+    # def on_train_start(self) -> None:
+    #     # called once before epoch 0
+    #     # freeze generator + PU for pre-training
+    #     for p in self.ncm.f.parameters():
+    #         p.requires_grad = False
+    #     for p in self.ncm.pu.parameters():
+    #         p.requires_grad = False
+    #     self._pretraining = True
+    #     print(f"[GANPipeline] Pre-training D for {self.pretrain_d_epochs} epochs → G frozen")
 
-    def on_train_epoch_start(self) -> None:
-        # unfreeze generator when we hit the cutoff epoch
-        if self.current_epoch == self.pretrain_d_epochs:
-            for p in self.ncm.f.parameters():
-                p.requires_grad = True
-            for p in self.ncm.pu.parameters():
-                p.requires_grad = True
-            self._pretraining = False
-            print("[GANPipeline] Finished D pre-training → G unfrozen")
+    # def on_train_epoch_start(self) -> None:
+    #     # unfreeze generator when we hit the cutoff epoch
+    #     if self.current_epoch == self.pretrain_d_epochs:
+    #         for p in self.ncm.f.parameters():
+    #             p.requires_grad = True
+    #         for p in self.ncm.pu.parameters():
+    #             p.requires_grad = True
+    #         self._pretraining = False
+    #         print("[GANPipeline] Finished D pre-training → G unfrozen")
     
     
     def training_step(self, batch, batch_idx):
