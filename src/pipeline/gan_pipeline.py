@@ -62,7 +62,7 @@ class EmbeddingSampler:
             out.append(emb_t)
         return out
 
-sampler = EmbeddingSampler("dat/HAM10000/embeddings_labels.npz", 'cpu')
+sampler = EmbeddingSampler("dat/HAM10000/ham10000_embeddings.npz", 'cpu')
 
 
 def log(x):
@@ -158,11 +158,12 @@ class GANPipeline(BasePipeline):
         if self.gan_mode == "wgan" or self.gan_mode == "wgangp":
             E_real = T.mean(real_out)
             E_fake = T.mean(fake_out)
-            import wandb
-            wandb.log({
-                "E_real": E_real,
-                "E_fake": E_fake
-            })
+            if self.wandb:
+                import wandb
+                wandb.log({
+                    "E_real": E_real,
+                    "E_fake": E_fake
+                })
             return -(E_real - E_fake)
         else:
             return -T.mean(log(real_out) + log(1 - fake_out))
@@ -222,6 +223,30 @@ class GANPipeline(BasePipeline):
     
     
     def training_step(self, batch, batch_idx):
+        # assume batch is a dict of 1-D torch tensors
+        Y   = batch['Y']   # shape (m,)
+        EMB = batch['EMB']
+        X   = batch['X']
+        SES = batch['SES']
+
+        # print(SES.shape)
+
+        # # mask for EMB=1 & X=1 & SES=1
+        # mask = (EMB == 1) & (X == 1) & (SES == 1)
+
+        # # numerator: those also with Y=1
+        # num = ((Y == 1) & mask).sum().float()
+
+        # # denominator: all with EMB=0, X=0, SES=0
+        # den = mask.sum().float()
+
+        # # estimate P(Y=1 | EMB=0, X=0, SES=0)
+        # estimate = num / den if den > 0 else T.tensor(float('nan'))
+
+        # print(f"Estimated P(Y=1 | EMB=0, X=0, SES=0) = {estimate.item():.3f}")
+
+        # assert 0
+
         G_opt, D_opt, PU_opt = self.optimizers()
         ncm_n = self.ncm_batch_size
 
@@ -293,9 +318,9 @@ class GANPipeline(BasePipeline):
         self.ncm.pu.zero_grad()
 
         # logging
-        if (self.current_epoch + 1) % 10 == 0:
+        if (self.current_epoch + 1) % 2 == 0 or True:
             if not self.logged:
-                self.logged = True
+                # self.logged = True
 
                 if self.img_query:
                     sample = self(n=64)
@@ -317,9 +342,10 @@ class GANPipeline(BasePipeline):
 
 
                     errors = [abs(qe - qt) for qe, qt in zip(q_estimate, q_true)]
-                    print("\nQuery results:")
-                    for i, (qt, qe, err) in enumerate(zip(q_true, q_estimate, errors), start=1):
-                        print(f"  Query {i}: truth = {qt:.6f}, estimate = {qe:.6f}, error = {err:.6f}")
+                    if batch_idx == 0:
+                        print("\nQuery results:")
+                        for i, (qt, qe, err) in enumerate(zip(q_true, q_estimate, errors), start=1):
+                            print(f"  Query {i}: truth = {qt:.6f}, estimate = {qe:.6f}, error = {err:.6f}")
 
                     for i, (qt, qe, err) in enumerate(zip(q_true, q_estimate, errors), start=1):
                         self.log(f"q{i}_truth", qt)
@@ -337,10 +363,10 @@ class GANPipeline(BasePipeline):
                     mae  = errs.mean()
                     rmse = np.sqrt((errs**2).mean())
                     maxe = errs.max()
-
-                    print(f"  MAE  = {mae:.6f}")
-                    print(f"  RMSE = {rmse:.6f}")
-                    print(f"  MaxE = {maxe:.6f}")
+                    if batch_idx == 0:
+                        print(f"  MAE  = {mae:.6f}")
+                        print(f"  RMSE = {rmse:.6f}")
+                        print(f"  MaxE = {maxe:.6f}")
 
                     self.log("mae", mae)
                     self.log("rmse", rmse)
